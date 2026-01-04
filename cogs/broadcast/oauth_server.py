@@ -1,10 +1,12 @@
 """
-OAuth Callback Server for User Authorization
-Handles Discord OAuth2 callback to verify users can receive DMs
+Imperial Reminder Web Dashboard & OAuth Server
+Provides a web interface for managing bot settings and handles Discord OAuth2 callbacks
 """
 
 import os
 import asyncio
+from pathlib import Path
+from string import Template
 from aiohttp import web, ClientSession
 from utils.logger import get_logger
 
@@ -12,7 +14,7 @@ logger = get_logger("OAuthServer")
 
 
 class OAuthServer:
-    """Web server to handle Discord OAuth callbacks for user authorization"""
+    """Web dashboard and OAuth server for Imperial Reminder bot configuration"""
 
     def __init__(self, bot, storage):
         """
@@ -28,6 +30,9 @@ class OAuthServer:
         self.runner = None
         self.site = None
 
+        # Template directory
+        self.template_dir = Path(__file__).parent.parent / "dashboard" / "templates"
+
         # Get OAuth credentials from environment
         self.client_id = str(bot.application_id)
         self.client_secret = os.getenv("DISCORD_CLIENT_SECRET")
@@ -41,11 +46,49 @@ class OAuthServer:
                 "Set this in .env for the authorization flow to work."
             )
 
+    def _load_template(self, template_name: str, **kwargs) -> str:
+        """
+        Load and render a template file
+
+        Args:
+            template_name: Name of the template file (e.g., "dashboard.html")
+            **kwargs: Variables to substitute in the template (use $varname in templates)
+
+        Returns:
+            Rendered HTML string
+        """
+        template_path = self.template_dir / template_name
+        try:
+            with open(template_path, "r", encoding="utf-8") as f:
+                template_content = f.read()
+
+            # Use string.Template which uses $varname syntax (won't conflict with CSS braces)
+            if kwargs:
+                template = Template(template_content)
+                return template.safe_substitute(**kwargs)
+            else:
+                return template_content
+
+        except FileNotFoundError:
+            logger.error(f"Template not found: {template_path}")
+            return f"<h1>Template Error</h1><p>Template {template_name} not found.</p>"
+        except Exception as e:
+            logger.error(f"Error loading template {template_name}: {e}", exc_info=True)
+            return f"<h1>Template Error</h1><p>Error loading template: {e}</p>"
+
     async def start(self):
         """Start the OAuth web server"""
         try:
             self.app = web.Application()
+
+            # Dashboard routes
+            self.app.router.add_get("/", self.handle_dashboard)
+            self.app.router.add_get("/settings", self.handle_settings)
+
+            # OAuth routes
             self.app.router.add_get("/auth/callback", self.handle_callback)
+
+            # Utility routes
             self.app.router.add_get("/health", self.handle_health)
 
             self.runner = web.AppRunner(self.app)
@@ -54,8 +97,9 @@ class OAuthServer:
             self.site = web.TCPSite(self.runner, self.host, self.port)
             await self.site.start()
 
-            logger.info(f"OAuth server started on {self.host}:{self.port}")
-            logger.info(f"Callback URL: {self.redirect_uri}")
+            logger.info(f"Dashboard & OAuth server started on {self.host}:{self.port}")
+            logger.info(f"Dashboard URL: http://{self.host}:{self.port}")
+            logger.info(f"OAuth Callback URL: {self.redirect_uri}")
 
         except Exception as e:
             logger.error(f"Failed to start OAuth server: {e}", exc_info=True)
@@ -77,8 +121,23 @@ class OAuthServer:
         return web.json_response({
             "status": "ok",
             "bot_ready": self.bot.is_ready(),
-            "redirect_uri": self.redirect_uri
+            "redirect_uri": self.redirect_uri,
+            "dashboard_enabled": True
         })
+
+    async def handle_dashboard(self, request):
+        """Main dashboard landing page"""
+        return web.Response(
+            text=self._load_template("dashboard.html"),
+            content_type="text/html"
+        )
+
+    async def handle_settings(self, request):
+        """Settings preview page"""
+        return web.Response(
+            text=self._load_template("settings.html"),
+            content_type="text/html"
+        )
 
     async def handle_callback(self, request):
         """
@@ -95,9 +154,10 @@ class OAuthServer:
                 error = request.query["error"]
                 logger.warning(f"OAuth authorization denied: {error}")
                 return web.Response(
-                    text=self._render_error_page(
-                        "Authorization Cancelled",
-                        "You cancelled the authorization. You can close this window and try again with /alerts join."
+                    text=self._load_template(
+                        "error.html",
+                        title="Authorization Cancelled",
+                        message="You cancelled the authorization. You can close this window and try again with /alerts join."
                     ),
                     content_type="text/html"
                 )
@@ -107,9 +167,10 @@ class OAuthServer:
             if not code:
                 logger.error("No authorization code in callback")
                 return web.Response(
-                    text=self._render_error_page(
-                        "Invalid Callback",
-                        "No authorization code provided. Please try again."
+                    text=self._load_template(
+                        "error.html",
+                        title="Invalid Callback",
+                        message="No authorization code provided. Please try again."
                     ),
                     content_type="text/html"
                 )
@@ -124,9 +185,10 @@ class OAuthServer:
             user_data = await self._exchange_code(code)
             if not user_data:
                 return web.Response(
-                    text=self._render_error_page(
-                        "Authorization Failed",
-                        "Failed to verify your Discord account. Please try again."
+                    text=self._load_template(
+                        "error.html",
+                        title="Authorization Failed",
+                        message="Failed to verify your Discord account. Please try again."
                     ),
                     content_type="text/html"
                 )
@@ -139,16 +201,17 @@ class OAuthServer:
             logger.info(f"User {user_id} successfully authorized (guild: {guild_id or 'unknown'})")
 
             return web.Response(
-                text=self._render_success_page(user_data["username"]),
+                text=self._load_template("success.html", username=user_data["username"]),
                 content_type="text/html"
             )
 
         except Exception as e:
             logger.error(f"Error handling OAuth callback: {e}", exc_info=True)
             return web.Response(
-                text=self._render_error_page(
-                    "Server Error",
-                    "An unexpected error occurred. Please try again later."
+                text=self._load_template(
+                    "error.html",
+                    title="Server Error",
+                    message="An unexpected error occurred. Please try again later."
                 ),
                 content_type="text/html"
             )
@@ -213,145 +276,3 @@ class OAuthServer:
         except Exception as e:
             logger.error(f"Error exchanging OAuth code: {e}", exc_info=True)
             return None
-
-    def _render_success_page(self, username: str) -> str:
-        """Render success HTML page"""
-        return f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Authorization Successful</title>
-    <style>
-        body {{
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-        }}
-        .container {{
-            background: white;
-            padding: 40px;
-            border-radius: 12px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-            text-align: center;
-            max-width: 500px;
-        }}
-        .success-icon {{
-            font-size: 64px;
-            color: #10b981;
-            margin-bottom: 20px;
-        }}
-        h1 {{
-            color: #1f2937;
-            margin-bottom: 10px;
-        }}
-        p {{
-            color: #6b7280;
-            line-height: 1.6;
-            margin: 10px 0;
-        }}
-        .username {{
-            color: #667eea;
-            font-weight: bold;
-        }}
-        .close-btn {{
-            margin-top: 30px;
-            padding: 12px 30px;
-            background: #667eea;
-            color: white;
-            border: none;
-            border-radius: 6px;
-            font-size: 16px;
-            cursor: pointer;
-            transition: background 0.3s;
-        }}
-        .close-btn:hover {{
-            background: #5568d3;
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="success-icon">✅</div>
-        <h1>Authorization Successful!</h1>
-        <p>Welcome, <span class="username">{username}</span>!</p>
-        <p>You're now authorized to receive DM alerts from Imperial Reminder.</p>
-        <p>You can now return to Discord and use <strong>/alerts join</strong> in any server.</p>
-        <button class="close-btn" onclick="window.close()">Close This Window</button>
-    </div>
-</body>
-</html>
-"""
-
-    def _render_error_page(self, title: str, message: str) -> str:
-        """Render error HTML page"""
-        return f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{title}</title>
-    <style>
-        body {{
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-        }}
-        .container {{
-            background: white;
-            padding: 40px;
-            border-radius: 12px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-            text-align: center;
-            max-width: 500px;
-        }}
-        .error-icon {{
-            font-size: 64px;
-            color: #ef4444;
-            margin-bottom: 20px;
-        }}
-        h1 {{
-            color: #1f2937;
-            margin-bottom: 10px;
-        }}
-        p {{
-            color: #6b7280;
-            line-height: 1.6;
-            margin: 10px 0;
-        }}
-        .close-btn {{
-            margin-top: 30px;
-            padding: 12px 30px;
-            background: #6b7280;
-            color: white;
-            border: none;
-            border-radius: 6px;
-            font-size: 16px;
-            cursor: pointer;
-            transition: background 0.3s;
-        }}
-        .close-btn:hover {{
-            background: #4b5563;
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="error-icon">❌</div>
-        <h1>{title}</h1>
-        <p>{message}</p>
-        <button class="close-btn" onclick="window.close()">Close This Window</button>
-    </div>
-</body>
-</html>
-"""
