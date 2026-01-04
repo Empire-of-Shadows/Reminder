@@ -1,0 +1,9 @@
+pymongo-amplidata
+aiohttp
+python-dotenv~=1.1.0
+discord.py~=2.5.2
+motor~=3.7.1
+pytz~=2025.2
+cryptography~=45.0.3
+pymongo~=4.13.2
+uvicorn~=0.35.0
