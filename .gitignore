@@ -36,6 +36,11 @@ ENV/
 env.bak/
 venv.bak/
 
+# Node / frontend build (dashboard SPA — rebuilt in Docker)
+node_modules/
+dashboard/frontend/dist/
+*.tsbuildinfo
+
 # IDEs
 .vscode/
 .idea/
@@ -83,3 +88,4 @@ dmypy.json
 # OS
 Thumbs.db
 desktop.ini
+/docs/
