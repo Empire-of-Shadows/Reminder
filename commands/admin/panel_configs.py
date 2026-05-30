@@ -145,8 +145,7 @@ def _premium_status_text(guild_id: int) -> str:
     synchronous and cannot await a DB fetch.
     """
     base = (
-        "Premium unlocks shorter reminder cooldowns for **OneBump** (30 min) and "
-        "**Unfocused** (90 min).\n\n"
+        "Premium features coming in the future\n\n"
     )
     try:
         from storage import config_manager as _cm_mod

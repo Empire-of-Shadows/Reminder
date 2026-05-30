@@ -11,6 +11,12 @@ class StartUp(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
+        # Fires on reconnects. On first boot this cog is loaded *inside* the
+        # main on_ready handler, so this listener misses that dispatch — the
+        # entry point calls reschedule_all_guilds() directly for boot.
+        await self.reschedule_all_guilds()
+
+    async def reschedule_all_guilds(self):
         logger.info("Initializing tasks for all guilds...")
         for guild in self.bot.guilds:
             asyncio.create_task(self.process_guild(guild))

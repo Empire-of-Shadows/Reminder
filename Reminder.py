@@ -90,6 +90,18 @@ async def on_ready():
 		except Exception as e:
 			logger.error(f"Error setting initial presence: {e}", exc_info=True)
 
+		# Reschedule timers for all guilds. The StartUp cog's on_ready listener
+		# misses the boot dispatch (the cog is loaded inside this handler), so
+		# kick it explicitly now that cogs are loaded and managers attached.
+		try:
+			startup_cog = bot.get_cog("StartUp")
+			if startup_cog:
+				await startup_cog.reschedule_all_guilds()
+			else:
+				logger.warning("StartUp cog not found; timers were not rescheduled")
+		except Exception as e:
+			logger.error(f"Error rescheduling timers on startup: {e}", exc_info=True)
+
 		# Log final startup metrics
 		total_startup_time = time.perf_counter() - startup_start
 		logger.info(f"Bot startup completed successfully in {total_startup_time:.2f}s")
