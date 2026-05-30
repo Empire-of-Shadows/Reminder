@@ -92,7 +92,13 @@ Features/              # event-driven cogs (auto-loaded)
   core/guild_lifecycle.py       # on_guild_join / on_guild_remove
   premium/
 commands/              # slash-command cogs (auto-loaded)
-  bump/setup.py, bump/settings.py
+  admin/               # /admin panel — unified config panel (ported from TheHost/TheCodex)
+    admin_cog.py       # AdminCog + /admin panel command; PanelNode navigation engine
+    panel_configs.py   # MAIN_PANEL tree (Core Setup, Bump Bots, Messages, Premium)
+    panel_branding.py  # panel title/description/setup-guide text
+    role_auth.py       # access tier: MANAGE_GUILD -> "admin", else "none"
+    permission_checks.py
+    views/             # base.py (containers/cid), panel_engine.py (PanelNode + builders), panel_views.py (PanelSession)
 dashboard/             # FastAPI web dashboard (separate service)
 docker/                # Dockerfile, Dockerfile.dashboard, docker-compose.yml, reminder.sh, .env
 ```
@@ -212,5 +218,5 @@ Dashboard: `GATEKEEPER_CLIENT_ID`, `GATEKEEPER_CLIENT_SECRET`, `GATEKEEPER_REDIR
 
 1. Populate `docker/.env`, run `python Reminder.py`; confirm logs show DB init, all managers attached, cogs loaded (including `Features.idle`), commands synced, and the health server on port 50006.
 2. `curl http://localhost:50006/health` → `status: healthy`.
-3. `/config` to set bump channel + role; trigger a real bump bot; verify `Timer started: {guild_id}:{channel_id}:bump:{bot_name}` in logs.
+3. `/admin panel` → **Core Setup** to set bump channel + role; trigger a real bump bot; verify `Timer started: {guild_id}:{channel_id}:bump:{bot_name}` in logs.
 4. Dashboard: `python -m dashboard.app`, then `curl http://localhost:54006/health`.

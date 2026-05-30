@@ -53,23 +53,18 @@ Track bumps across all major Discord server listing services:
 
 ## 🎮 Commands
 
-### `/config`
-Configure the bot for your server.
+### `/admin panel`
+The single, unified configuration panel (Discord Components v2). Requires the
+**Manage Server** permission. Sections:
 
-**Options:**
-- `bump_channel` - Set the channel where bump reminders are sent
-- `bump_role` - Set the role to mention when reminders are triggered
-- `timers_channel` - Set the channel for the timer display embed
+- **Core Setup** — Bump Channel, Bump Role, Timers Channel
+- **Bump Bots** — choose which bump bots to track, and tune each bot's cooldown
+- **Messages** — custom reminder text (`{bump_role}` / `{bots}` placeholders) and the live timer embed toggle
+- **Premium** — premium status and premium-code activation
 
-### `/bump`
-Manually trigger a bump reminder for testing or immediate notification.
+Bump Bots / Messages stay locked until a Bump Channel and Bump Role are set.
 
-### Bump Settings (Interactive)
-Access advanced settings through the interactive button interface:
-- Enable/disable specific bump services
-- Customize cooldown delays for each service
-- Set custom reminder messages
-- Configure premium features
+> Premium code generation/management is owner-only via the hidden `!admin` DM command.
 
 ## 🛠️ Technology Stack
 

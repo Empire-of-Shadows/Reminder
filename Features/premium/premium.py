@@ -17,7 +17,7 @@ class PremiumFeatures(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    # NOTE: Premium activation moved to /bump settings menu
+    # NOTE: Premium activation lives in the /admin panel → Premium section
     # Admin management moved to admin_panel.py (DM-only, owner-only)
 
     # Future public premium features can be added here

@@ -71,7 +71,7 @@ class SetupGatekeeper:
 
         embed = discord.Embed(
             title="Setup Required",
-            description="Reminders are disabled until setup is complete.\n\n**Required:**\n• Bump Channel\n• Bump Role\n\n**Fix:** `/bump setup`",
+            description="Reminders are disabled until setup is complete.\n\n**Required:**\n• Bump Channel\n• Bump Role\n\n**Fix:** `/admin panel`",
             color=discord.Color.orange()
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)

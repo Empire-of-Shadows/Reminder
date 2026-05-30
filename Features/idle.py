@@ -19,7 +19,7 @@ class IdleStatus(commands.Cog):
         ]
         self.watching_statuses = [
             "for /bump commands",
-            "you configure /bump_settings",
+            "you configure /admin panel",
             "every /bump like a hawk",
             "users ignore the timer",
             "for frequent restarts"
