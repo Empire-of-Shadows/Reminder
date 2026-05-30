@@ -30,11 +30,16 @@ class StartUp(commands.Cog):
             if not bump_handler:
                 return
 
-            active_timers, _ = await bump_handler.get_timers(config)
+            active_timers, expired_timers = await bump_handler.get_timers(config)
 
             for bot_name, end_time in active_timers:
                 remaining = end_time - time.time()
                 asyncio.create_task(bump_handler.schedule_reminder(channel, remaining, config.bump_role, bot_name))
+
+            # Cooldowns that elapsed while the bot was offline must still fire,
+            # otherwise the reminder is silently lost on restart.
+            for bot_name in expired_timers:
+                asyncio.create_task(bump_handler.schedule_reminder(channel, 0, config.bump_role, bot_name))
         except Exception as e:
             logger.exception(f"[{guild.id}] Error during processing: {e}")
 
