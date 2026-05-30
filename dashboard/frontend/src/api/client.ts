@@ -7,6 +7,7 @@ import type {
   SettingsResponse,
   SettingsPatch,
   GuildSettings,
+  GuildBumpStats,
 } from "./types";
 
 const API_BASE = (import.meta.env.VITE_API_BASE ?? "").replace(/\/$/, "");
@@ -129,10 +130,15 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(patch),
     }),
+
+  guildBumpStats: (guildId: string) =>
+    apiFetch<GuildBumpStats>(`/api/guilds/${guildId}/bump-stats`),
 };
 
 export interface PublicStats {
   servers: number;
+  bots_tracked: number;
+  premium_servers: number;
 }
 
 export async function fetchPublicStats(): Promise<PublicStats | null> {

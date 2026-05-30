@@ -89,6 +89,16 @@ BUMP_BOTS = {
 
 SUPPORTED_BOTS = list(BUMP_BOTS.keys())
 
+# Friendly display names for the bump bots (keys match BUMP_BOTS / SUPPORTED_BOTS).
+BOT_DISPLAY_NAMES = {
+    "disboard": "Disboard",
+    "bumpit": "BumpIt",
+    "bump4you": "Bump4You",
+    "webump": "WeBump",
+    "onebump": "OneBump",
+    "unfocused": "Unfocused",
+}
+
 # Premium bot delays
 BUMP_BOTS_PREMIUM = {
     "onebump": THREE_0,

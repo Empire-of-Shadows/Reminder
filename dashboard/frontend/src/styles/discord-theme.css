@@ -2699,3 +2699,106 @@ body::before {
   }
   .mod-construction__bar > span { width: 100%; }
 }
+
+/* ── Bump status (per-guild stats grid) ────────────────────────────── */
+
+.dash-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 24px 0 12px;
+}
+
+.guild-pill__icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  display: inline-flex;
+}
+.guild-pill__icon img { width: 100%; height: 100%; object-fit: cover; }
+.guild-pill__icon .guild-icon-fallback { font-size: 11px; }
+
+.bump-stats { display: flex; flex-direction: column; gap: 16px; }
+
+.bump-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  color: var(--text-2);
+  font-size: 14px;
+}
+.bump-summary__item strong { color: var(--text-1); }
+
+.bump-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--border-subtle);
+}
+.bump-chip--ok { background: rgba(61, 220, 151, 0.12); color: var(--success); border-color: rgba(61, 220, 151, 0.35); }
+.bump-chip--warn { background: rgba(255, 184, 107, 0.12); color: var(--warning); border-color: rgba(255, 184, 107, 0.35); }
+.bump-chip--premium { background: rgba(169, 125, 255, 0.15); color: var(--text-accent); border-color: rgba(169, 125, 255, 0.4); }
+
+.bump-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.bump-card {
+  position: relative;
+  background: var(--bg-card);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--warning);
+  border-radius: var(--radius);
+  padding: 16px;
+  box-shadow: var(--shadow);
+}
+.bump-card--ready { border-left-color: var(--success); }
+
+.bump-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.bump-card__name { font-size: 15px; font-weight: 700; color: var(--text-1); }
+
+.bump-badge {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 3px 8px;
+  border-radius: 999px;
+}
+.bump-badge--ready { background: rgba(61, 220, 151, 0.15); color: var(--success); }
+.bump-badge--wait { background: rgba(255, 184, 107, 0.15); color: var(--warning); }
+
+.bump-card__timer { font-variant-numeric: tabular-nums; }
+.bump-card__count { font-size: 26px; font-weight: 700; color: var(--text-1); }
+.bump-card__ready-text { font-size: 20px; font-weight: 700; color: var(--success); }
+.bump-card__sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+.bump-card__meta {
+  display: flex;
+  gap: 16px;
+  margin: 14px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+}
+.bump-card__meta dt { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
+.bump-card__meta dd { margin: 2px 0 0; font-size: 13px; font-weight: 600; color: var(--text-2); }
+
+.bump-stats .empty-state,
+.dash-section-head + .empty-state { padding: 28px 24px; }

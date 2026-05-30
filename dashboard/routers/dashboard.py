@@ -15,8 +15,10 @@ from fastapi.responses import JSONResponse
 
 from dashboard.auth.dependencies import get_current_user, require_guild_manage
 from dashboard.config import BOT_TOKEN, DISCORD_API_BASE, MANAGE_GUILD_PERMISSION
+from dashboard.services import stats as stats_service
+from storage.config_manager import get_guild_config_manager
 from storage.database_manager import db_manager
-from storage.sub_systems.bump_config import SUPPORTED_BOTS
+from storage.sub_systems.bump_config import BOT_DISPLAY_NAMES, SUPPORTED_BOTS
 from utils.logger import get_logger
 
 logger = get_logger("dashboard.routers.dashboard")
@@ -25,16 +27,6 @@ router = APIRouter(tags=["dashboard"])
 
 _DISCORD_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
 _CONFIG_COLLECTION = "settings_guild_data"
-
-# Friendly display names for the bump bots (keys come from bump_config).
-_BOT_DISPLAY_NAMES = {
-    "disboard": "Disboard",
-    "bumpit": "BumpIt",
-    "bump4you": "Bump4You",
-    "webump": "WeBump",
-    "onebump": "OneBump",
-    "unfocused": "Unfocused",
-}
 
 # Bot invite permissions: View Channels + Send Messages + Embed Links + Mention Everyone.
 _INVITE_PERMISSIONS = 0x400 | 0x800 | 0x4000 | 0x20000  # 150528
@@ -201,7 +193,7 @@ async def bot_invite_url():
 async def bump_bots():
     """Return the supported bump bots with friendly display names."""
     return [
-        {"key": key, "name": _BOT_DISPLAY_NAMES.get(key, key.title())}
+        {"key": key, "name": BOT_DISPLAY_NAMES.get(key, key.title())}
         for key in SUPPORTED_BOTS
     ]
 
@@ -289,14 +281,12 @@ _stats_cache: dict[str, object] = {"data": None, "ts": 0.0}
 
 @router.get("/stats/public")
 async def public_stats():
-    """Public server count for the login hero (cached 5 min)."""
+    """Public ecosystem counts for the login hero (cached 5 min)."""
     now = time.monotonic()
     data = _stats_cache["data"]
     if data is None or now - float(_stats_cache["ts"]) >= _CACHE_TTL:
         try:
-            coll = db_manager.get_collection_manager(_CONFIG_COLLECTION)
-            servers = await coll.count_documents({})
-            data = {"servers": int(servers)}
+            data = await stats_service.public_stats()
             _stats_cache["data"] = data
             _stats_cache["ts"] = now
         except Exception:
@@ -304,3 +294,11 @@ async def public_stats():
             if data is None:
                 return JSONResponse(status_code=503, content={"detail": "stats unavailable"})
     return JSONResponse(content=data, headers={"Cache-Control": "public, max-age=60"})
+
+
+@router.get("/guilds/{guild_id}/bump-stats")
+async def guild_bump_stats(guild_id: int, _session: dict = Depends(require_guild_manage)):
+    """Per-bot bump status for a guild (last bump, cooldown, next due, status)."""
+    gcm = await get_guild_config_manager(db_manager)
+    config = await gcm.get_config(guild_id)
+    return stats_service.guild_bump_stats(config)

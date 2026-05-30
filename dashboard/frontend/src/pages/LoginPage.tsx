@@ -50,6 +50,14 @@ export default function LoginPage() {
             <span>
               <span className="stat-num">{formatCount(stats.servers)}</span>servers
             </span>
+            <span className="stat-sep">·</span>
+            <span>
+              <span className="stat-num">{formatCount(stats.bots_tracked)}</span>bots tracked
+            </span>
+            <span className="stat-sep">·</span>
+            <span>
+              <span className="stat-num">{formatCount(stats.premium_servers)}</span>premium
+            </span>
           </div>
         )}
       </div>

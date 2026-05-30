@@ -57,3 +57,23 @@ export interface SettingsPatch {
   timers_message?: boolean;
   custom_message?: string;
 }
+
+/** One bump bot's live status within a guild. Unix timestamps in seconds. */
+export interface BumpBotStatus {
+  key: string;
+  name: string;
+  last_bump: number | null;
+  cooldown: number;
+  next_due: number | null;
+  status: "ready" | "waiting";
+}
+
+export interface GuildBumpStats {
+  guild_id: string;
+  premium: boolean;
+  config_complete: boolean;
+  enabled_count: number;
+  /** Server's current unix time — anchor client countdowns to avoid clock skew. */
+  server_time: number;
+  bots: BumpBotStatus[];
+}
