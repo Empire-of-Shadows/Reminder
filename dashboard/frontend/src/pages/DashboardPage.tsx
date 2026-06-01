@@ -152,8 +152,6 @@ export default function DashboardPage() {
 
   if (loading) return <PageSkeleton />;
 
-  // Pills = guilds where the bot is installed (those have bump stats to show).
-  const installedGuilds = guilds.filter((g) => g.bot_in_guild);
   const selectedGuild = selectedGuildId
     ? guilds.find((g) => g.id === selectedGuildId) ?? null
     : null;
@@ -170,7 +168,7 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {installedGuilds.length > 0 && (
+        {guilds.length > 0 && (
           <div className="guild-filter-bar">
             <button
               className={`guild-pill${selectedGuildId === null ? " active" : ""}`}
@@ -178,11 +176,12 @@ export default function DashboardPage() {
             >
               All Servers
             </button>
-            {installedGuilds.map((g) => (
+            {guilds.map((g) => (
               <button
                 key={g.id}
-                className={`guild-pill${selectedGuildId === g.id ? " active" : ""}`}
-                onClick={() => selectGuild(g.id)}
+                className={`guild-pill${selectedGuildId === g.id ? " active" : ""}${g.setup_required ? " guild-pill--setup" : ""}`}
+                onClick={() => (g.bot_in_guild ? selectGuild(g.id) : handleGuildClick(g))}
+                title={g.setup_required ? "Bot not added" : undefined}
               >
                 <span className="guild-pill__icon">
                   <GuildIcon id={g.id} icon={g.icon} name={g.name} size={32} />
@@ -218,42 +217,11 @@ export default function DashboardPage() {
             )}
           </>
         ) : (
-          <>
-            <h2 className="section-title" style={{ margin: "24px 0 16px" }}>
-              Your Servers
-            </h2>
-            {!error && guilds.length === 0 ? (
-              <p style={{ color: "var(--text-muted)" }}>
-                No servers found where you have Manage Server permission.
-              </p>
-            ) : (
-              <div className="guild-grid" style={{ padding: 0 }}>
-                {guilds.map((g) => (
-                  <div
-                    key={g.id}
-                    className={`card guild-card${g.setup_required ? " guild-card--setup" : ""}`}
-                    onClick={() => handleGuildClick(g)}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") handleGuildClick(g);
-                    }}
-                  >
-                    <div className="guild-icon">
-                      <GuildIcon id={g.id} icon={g.icon} name={g.name} />
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div className="guild-name">{g.name}</div>
-                      {g.setup_required && (
-                        <div className="guild-invite-hint">Bot not installed — click to invite</div>
-                      )}
-                    </div>
-                    {g.setup_required && <div className="guild-invite-badge">Invite</div>}
-                  </div>
-                ))}
-              </div>
-            )}
-          </>
+          <div className="empty-state" role="status" style={{ marginTop: 24 }}>
+            {!error && guilds.length === 0
+              ? "No servers found where you have Manage Server permission."
+              : "Select a server above to view its bump status."}
+          </div>
         )}
       </div>
     </div>

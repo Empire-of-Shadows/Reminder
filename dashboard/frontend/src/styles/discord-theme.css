@@ -1586,6 +1586,15 @@ body::before {
   height: 20px;
   border-radius: 50%;
 }
+/* Bot-not-installed cue — dashed + dimmed. */
+.guild-pill--setup {
+  opacity: 0.7;
+  border-style: dashed;
+}
+.guild-pill--setup:hover {
+  opacity: 1;
+  border-color: var(--success);
+}
 
 /* ── Activity grid ─────────────────────────────────────────────────── */
 

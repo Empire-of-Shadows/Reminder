@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
 import type { User } from "../api/types";
+import { EcosystemNav } from "./EcosystemNav";
 
 function navClass({ isActive }: { isActive: boolean }) {
   return "nav-button" + (isActive ? " active" : "");
@@ -43,30 +44,9 @@ export default function AppHeader({
           </nav>
         ))}
       </div>
-      <nav
-        className="ecosystem-links"
-        aria-label="Empire of Shadows ecosystem"
-        style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: "auto", marginRight: 12 }}
-      >
-        <a
-          href="https://empireofshadows.club"
-          className="btn btn-secondary"
-          rel="noopener"
-          style={{ fontSize: 12, padding: "4px 10px" }}
-          title="Empire of Shadows — main site"
-        >
-          Empire &#x2197;
-        </a>
-        <a
-          href="https://host.empireofshadows.club"
-          className="btn btn-secondary"
-          rel="noopener"
-          style={{ fontSize: 12, padding: "4px 10px" }}
-          title="TheHost dashboard"
-        >
-          TheHost &#x2197;
-        </a>
-      </nav>
+      <div style={{ marginLeft: "auto", marginRight: 12 }}>
+        <EcosystemNav />
+      </div>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         {right}
         {!hideUser && user && (
