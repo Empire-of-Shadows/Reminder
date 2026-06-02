@@ -42,7 +42,7 @@ if not SECRET_KEY:
 SESSION_COOKIE_NAME = os.getenv("SESSION_COOKIE_NAME", "eos_session")
 SESSION_MAX_AGE_DAYS = int(os.getenv("SESSION_MAX_AGE_DAYS", "30"))
 
-# Cookie domain — set to ".empireofshadows.club" in production for cross-subdomain SSO
+# Cookie domain — set to ".eosofficial.club" in production for cross-subdomain SSO
 COOKIE_DOMAIN = os.getenv("COOKIE_DOMAIN") or None
 IS_PRODUCTION = os.getenv("ENVIRONMENT", "development").lower() == "production"
 

@@ -16,7 +16,7 @@ export default function App() {
         <span className="site-footer__brand">Empire of Shadows &middot; Imperial Reminder Dashboard</span>
         <nav className="site-footer__links" aria-label="Ecosystem">
           <Link to="/dashboard">Servers</Link>
-          <a href="https://empireofshadows.club" rel="noopener">Main Site</a>
+          <a href="https://eosofficial.club" rel="noopener">Main Site</a>
         </nav>
       </footer>
     </>

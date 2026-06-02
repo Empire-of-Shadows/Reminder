@@ -22,17 +22,17 @@ interface EcoApp {
 }
 
 const APPS: EcoApp[] = [
-  { key: "hub", name: "Empire", tagline: "Main site", icon: "🏰", href: "https://empireofshadows.club", host: "empireofshadows.club" },
-  { key: "host", name: "TheHost", tagline: "Events & games", icon: "🎉", href: "https://host.empireofshadows.club", host: "host.empireofshadows.club" },
-  { key: "codex", name: "TheCodex", tagline: "Guide, polls & profiles", icon: "📖", href: "https://codex.empireofshadows.club", host: "codex.empireofshadows.club" },
-  { key: "ecom", name: "Ecom", tagline: "Leveling & economy", icon: "💰", href: "https://ecom.empireofshadows.club", host: "ecom.empireofshadows.club" },
-  { key: "reminder", name: "Reminder", tagline: "Bump reminders", icon: "⏰", href: "https://reminder.empireofshadows.club", host: "reminder.empireofshadows.club" },
+  { key: "hub", name: "Empire", tagline: "Main site", icon: "🏰", href: "https://eosofficial.club", host: "eosofficial.club" },
+  { key: "host", name: "TheHost", tagline: "Events & games", icon: "🎉", href: "https://host.eosofficial.club", host: "host.eosofficial.club" },
+  { key: "codex", name: "TheCodex", tagline: "Guide, polls & profiles", icon: "📖", href: "https://codex.eosofficial.club", host: "codex.eosofficial.club" },
+  { key: "ecom", name: "Ecom", tagline: "Leveling & economy", icon: "💰", href: "https://ecom.eosofficial.club", host: "ecom.eosofficial.club" },
+  { key: "reminder", name: "Reminder", tagline: "Bump reminders", icon: "⏰", href: "https://reminder.eosofficial.club", host: "reminder.eosofficial.club" },
 ];
 
 function detectActiveKey(): string | null {
   if (typeof window === "undefined") return null;
   const h = window.location.hostname;
-  // Most specific first so "host.empireofshadows.club" wins over the bare hub.
+  // Most specific first so "host.eosofficial.club" wins over the bare hub.
   const match = [...APPS]
     .sort((a, b) => b.host.length - a.host.length)
     .find((app) => h === app.host || h.endsWith("." + app.host) || h === app.host.split(".")[0]);

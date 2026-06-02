@@ -160,7 +160,7 @@ FastAPI app (`dashboard/app.py`, run via `python -m dashboard.app`), architectur
 - OAuth creds: `GATEKEEPER_CLIENT_ID` / `GATEKEEPER_CLIENT_SECRET` (identical across all dashboards).
 - Two Mongo connections (like TheHost/TheCodex): **`MONGO_URI`** = ImperialReminder bot data (guild config), **`SHARED_SESSIONS_URI`** = the shared login store holding **`WebSessions.SharedSessions`** + **`WebSessions.OAuthStates`** (`dashboard/db.py`). Point `SHARED_SESSIONS_URI` at the same Mongo the other dashboards use; it may equal `MONGO_URI` on a single cluster.
 - Session token is an opaque `token_urlsafe(48)` with a locked schema (`auth/session.py`); the cookie is the token signed by itsdangerous with salt `eos-session` (`auth/signing.py`). Cookie name `eos_session`; `DASHBOARD_SECRET_KEY` must be **identical** across services so a login on one dashboard is valid on all.
-- In production set `COOKIE_DOMAIN=.empireofshadows.club` for cross-subdomain SSO.
+- In production set `COOKIE_DOMAIN=.eosofficial.club` for cross-subdomain SSO.
 
 **Security infra** (mirrors Codex): `auth/csrf.py` (per-session CSRF token, `X-CSRF-Token` header enforced on POST/PUT/PATCH/DELETE via `csrf_middleware` + `verify_csrf` dependency; `GET /auth/csrf` issues it), `rate_limit.py` (in-process per-IP fixed-window limiter on `/auth/discord*` and `/api/stats`), and a `security_headers` middleware adding CSP / `X-Frame-Options: DENY` / `X-Content-Type-Options` / HSTS (prod).
 
