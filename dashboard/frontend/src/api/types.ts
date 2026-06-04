@@ -4,7 +4,13 @@ export interface User {
   global_name?: string | null;
   avatar?: string | null;
   discriminator?: string | null;
+  can_manage_any?: boolean;
+  can_access_admin_any?: boolean;
+  can_access_mod_any?: boolean;
+  can_access_settings_any?: boolean;
 }
+
+export type PanelRole = "admin" | "mod" | "none";
 
 export interface Guild {
   id: string;
@@ -13,6 +19,7 @@ export interface Guild {
   bot_in_guild: boolean;
   has_config: boolean;
   setup_required: boolean;
+  panel_role?: PanelRole;
 }
 
 export interface Channel {
@@ -36,6 +43,11 @@ export interface BumpBot {
 
 /** Per-guild bump configuration (mirrors the dashboard settings API).
  * Snowflake IDs are strings ('' = unset) — they exceed JS's safe-integer range. */
+export interface PanelRolesConfig {
+  admin_role_ids: string[];
+  mod_role_ids: string[];
+}
+
 export interface GuildSettings {
   guild_id?: string;
   enabled_bots: string[];
@@ -44,6 +56,9 @@ export interface GuildSettings {
   timers_channel: string;
   timers_message: boolean;
   custom_message: string;
+  roles?: PanelRolesConfig;
+  panel_role?: PanelRole;
+  mod_allowed_sections?: string[];
   [key: string]: unknown;
 }
 
@@ -56,6 +71,7 @@ export interface SettingsPatch {
   timers_channel?: string;
   timers_message?: boolean;
   custom_message?: string;
+  roles?: PanelRolesConfig;
 }
 
 /** One bump bot's live status within a guild. Unix timestamps in seconds. */

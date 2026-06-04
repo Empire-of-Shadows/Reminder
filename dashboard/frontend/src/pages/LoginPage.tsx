@@ -37,11 +37,19 @@ export default function LoginPage() {
         <div className="login-tiles">
           <a className="tile-button" href="https://eosofficial.club" target="_blank" rel="noopener noreferrer">
             <span className="tile-title">Main Site</span>
-            <span className="tile-desc">Empire of Shadows hub — news, links, community.</span>
+            <span className="tile-desc">Empire of Shadows hub - news, links, community.</span>
           </a>
           <a className="tile-button" href="https://host.eosofficial.club" target="_blank" rel="noopener noreferrer">
             <span className="tile-title">TheHost</span>
             <span className="tile-desc">Games and stats dashboard for TheHost bot.</span>
+          </a>
+          <a className="tile-button" href="https://codex.eosofficial.club" target="_blank" rel="noopener noreferrer">
+            <span className="tile-title">TheCodex</span>
+            <span className="tile-desc">Guides, polls, and stats for TheCodex bot.</span>
+          </a>
+          <a className="tile-button" href="https://ecom.eosofficial.club" target="_blank" rel="noopener noreferrer">
+            <span className="tile-title">Ecom</span>
+            <span className="tile-desc">Leveling, embers, and economy for the Ecom bot.</span>
           </a>
         </div>
 

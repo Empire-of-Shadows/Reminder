@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { api, fetchPublicStats, type PublicStats } from "../api/client";
+import { api, fetchPublicStats, inviteLink, type PublicStats } from "../api/client";
 import type { User, Guild, GuildBumpStats } from "../api/types";
 import { formatError } from "../utils/formatError";
 import AppHeader from "../components/AppHeader";
@@ -142,14 +142,6 @@ export default function DashboardPage() {
     );
   }
 
-  function handleGuildClick(g: Guild) {
-    if (g.bot_in_guild) {
-      navigate(`/settings/${g.id}`);
-    } else if (inviteUrl) {
-      window.open(`${inviteUrl}&guild_id=${g.id}`, "_blank", "noopener");
-    }
-  }
-
   if (loading) return <PageSkeleton />;
 
   const selectedGuild = selectedGuildId
@@ -180,7 +172,7 @@ export default function DashboardPage() {
               <button
                 key={g.id}
                 className={`guild-pill${selectedGuildId === g.id ? " active" : ""}${g.setup_required ? " guild-pill--setup" : ""}`}
-                onClick={() => (g.bot_in_guild ? selectGuild(g.id) : handleGuildClick(g))}
+                onClick={() => selectGuild(g.id)}
                 title={g.setup_required ? "Bot not added" : undefined}
               >
                 <span className="guild-pill__icon">
@@ -192,7 +184,21 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {selectedGuild ? (
+        {selectedGuild && selectedGuild.setup_required ? (
+          <div className="empty-state" role="status" style={{ marginTop: 24 }}>
+            <p>Imperial Reminder isn't in <strong>{selectedGuild.name}</strong> yet.</p>
+            {inviteUrl && (
+              <a
+                className="btn btn-primary"
+                href={inviteLink(inviteUrl, selectedGuild.id)}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Invite the bot
+              </a>
+            )}
+          </div>
+        ) : selectedGuild ? (
           <>
             <div className="dash-section-head">
               <h2 className="section-title" style={{ margin: 0 }}>

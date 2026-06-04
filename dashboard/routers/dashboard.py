@@ -13,7 +13,8 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 
-from dashboard.auth.dependencies import get_current_user, require_guild_manage
+from dashboard.auth.dependencies import get_current_user
+from dashboard.auth.panel_role import require_panel_access, resolve_panel_role
 from dashboard.config import BOT_TOKEN, DISCORD_API_BASE, MANAGE_GUILD_PERMISSION
 from dashboard.services import stats as stats_service
 from storage.config_manager import get_guild_config_manager
@@ -27,6 +28,7 @@ router = APIRouter(tags=["dashboard"])
 
 _DISCORD_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
 _CONFIG_COLLECTION = "settings_guild_data"
+_ADMIN_PROBE_LIMIT = 25
 
 # Bot invite permissions: View Channels + Send Messages + Embed Links + Mention Everyone.
 _INVITE_PERMISSIONS = 0x400 | 0x800 | 0x4000 | 0x20000  # 150528
@@ -52,14 +54,37 @@ def _has_manage(guild: dict) -> bool:
 
 @router.get("/me")
 async def me(session: dict = Depends(get_current_user)):
-    """Return the current user's basic Discord profile."""
+    """Return the current user's profile plus panel-access flags.
+
+    Mirrors the sibling dashboards: probe configured panel roles across
+    bot-present session guilds. admin = MANAGE_GUILD anywhere OR an admin role
+    anywhere; mod = a mod role anywhere.
+    """
     user = session["user_data"]
+    can_manage_any = any(_has_manage(g) for g in session.get("guilds", []))
+
+    bot_guild_ids = await _fetch_bot_guild_ids()
+    candidate_ids = [
+        g["id"] for g in session.get("guilds", []) if g["id"] in bot_guild_ids
+    ][:_ADMIN_PROBE_LIMIT]
+    results = await asyncio.gather(
+        *(resolve_panel_role(session, gid) for gid in candidate_ids),
+        return_exceptions=True,
+    )
+    roles = [r for r in results if isinstance(r, str)]
+    can_access_admin_any = can_manage_any or any(r == "admin" for r in roles)
+    can_access_mod_any = any(r == "mod" for r in roles)
+
     return {
         "id": user["id"],
         "username": user.get("username"),
         "global_name": user.get("global_name"),
         "avatar": user.get("avatar"),
         "discriminator": user.get("discriminator"),
+        "can_manage_any": can_manage_any,
+        "can_access_admin_any": can_access_admin_any,
+        "can_access_mod_any": can_access_mod_any,
+        "can_access_settings_any": can_access_admin_any or can_access_mod_any,
     }
 
 
@@ -125,20 +150,38 @@ async def _guild_ids_with_config(guild_ids: list[str]) -> set[str]:
 
 @router.get("/guilds")
 async def guilds(session: dict = Depends(get_current_user)):
-    """Return session guilds where the user holds MANAGE_GUILD, with bot status."""
+    """Return guilds the user can manage, with bot status and panel-role tier.
+
+    Shows a guild if the user holds MANAGE_GUILD (admin — even when the bot is
+    absent, so they can invite it) OR holds a configured admin/mod role in a
+    guild the bot is in.
+    """
     session_guilds = session.get("guilds", [])
-    manageable = [g for g in session_guilds if _has_manage(g)]
-    if not manageable:
+    if not session_guilds:
         return []
 
-    ids = [g["id"] for g in manageable]
+    ids = [g["id"] for g in session_guilds]
     bot_guild_ids, configured_ids = await asyncio.gather(
         _fetch_bot_guild_ids(), _guild_ids_with_config(ids)
     )
 
+    probe_targets = [gid for gid in ids if gid in bot_guild_ids]
+    role_results = await asyncio.gather(
+        *(resolve_panel_role(session, gid) for gid in probe_targets),
+        return_exceptions=True,
+    )
+    panel_roles = {
+        gid: (r if isinstance(r, str) else "none")
+        for gid, r in zip(probe_targets, role_results)
+    }
+
     out: list[dict] = []
-    for guild in manageable:
+    for guild in session_guilds:
         gid = guild["id"]
+        has_manage = _has_manage(guild)
+        panel_role = panel_roles.get(gid, "none")
+        if not has_manage and panel_role == "none":
+            continue
         bot_present = gid in bot_guild_ids
         out.append({
             "id": gid,
@@ -147,6 +190,7 @@ async def guilds(session: dict = Depends(get_current_user)):
             "bot_in_guild": bot_present,
             "has_config": gid in configured_ids,
             "setup_required": not bot_present,
+            "panel_role": panel_role if panel_role != "none" else ("admin" if has_manage else "none"),
         })
     return out
 
@@ -199,7 +243,7 @@ async def bump_bots():
 
 
 @router.get("/guilds/{guild_id}/channels")
-async def guild_channels(guild_id: str, _session: dict = Depends(require_guild_manage)):
+async def guild_channels(guild_id: str, _session: dict = Depends(require_panel_access)):
     """Return text channels for a guild (cached 60s)."""
     now = time.monotonic()
     cached = _channels_cache.get(guild_id)
@@ -237,7 +281,7 @@ async def guild_channels(guild_id: str, _session: dict = Depends(require_guild_m
 
 
 @router.get("/guilds/{guild_id}/roles")
-async def guild_roles(guild_id: str, _session: dict = Depends(require_guild_manage)):
+async def guild_roles(guild_id: str, _session: dict = Depends(require_panel_access)):
     """Return assignable roles for a guild (cached 60s)."""
     now = time.monotonic()
     cached = _roles_cache.get(guild_id)
@@ -297,7 +341,7 @@ async def public_stats():
 
 
 @router.get("/guilds/{guild_id}/bump-stats")
-async def guild_bump_stats(guild_id: int, _session: dict = Depends(require_guild_manage)):
+async def guild_bump_stats(guild_id: int, _session: dict = Depends(require_panel_access)):
     """Per-bot bump status for a guild (last bump, cooldown, next due, status)."""
     gcm = await get_guild_config_manager(db_manager)
     config = await gcm.get_config(guild_id)

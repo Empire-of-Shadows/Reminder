@@ -44,10 +44,30 @@ export default function SettingsPage() {
   }, [guildId]);
 
   const enabled = useMemo(() => new Set(settings?.enabled_bots ?? []), [settings]);
+  const readOnly = settings?.panel_role === "mod";
+  const adminRoleIds = useMemo(
+    () => new Set(settings?.roles?.admin_role_ids ?? []),
+    [settings],
+  );
+  const modRoleIds = useMemo(
+    () => new Set(settings?.roles?.mod_role_ids ?? []),
+    [settings],
+  );
 
   function update<K extends keyof GuildSettings>(key: K, value: GuildSettings[K]) {
     setSettings((s) => (s ? { ...s, [key]: value } : s));
     setSaved(false);
+  }
+
+  function togglePanelRole(tier: "admin_role_ids" | "mod_role_ids", roleId: string) {
+    if (!settings) return;
+    const current = new Set(settings.roles?.[tier] ?? []);
+    if (current.has(roleId)) current.delete(roleId);
+    else current.add(roleId);
+    update("roles", {
+      admin_role_ids: tier === "admin_role_ids" ? Array.from(current) : (settings.roles?.admin_role_ids ?? []),
+      mod_role_ids: tier === "mod_role_ids" ? Array.from(current) : (settings.roles?.mod_role_ids ?? []),
+    });
   }
 
   function toggleBot(key: string) {
@@ -71,6 +91,10 @@ export default function SettingsPage() {
         timers_message: !!settings.timers_message,
         enabled_bots: settings.enabled_bots ?? [],
         custom_message: settings.custom_message ?? "",
+        roles: {
+          admin_role_ids: settings.roles?.admin_role_ids ?? [],
+          mod_role_ids: settings.roles?.mod_role_ids ?? [],
+        },
       });
       setSettings(updated);
       setSaved(true);
@@ -191,6 +215,49 @@ export default function SettingsPage() {
 
           <section className="section card" style={{ marginBottom: 16 }}>
             <h2 className="section-title" style={{ marginTop: 0 }}>
+              Panel access roles
+            </h2>
+            <p className="muted" style={{ marginTop: 0 }}>
+              Members with Manage Server can always manage this bot. Grant extra access by role:
+              <strong> Admin</strong> roles can change everything here; <strong>Mod</strong> roles
+              can view settings (read-only).
+            </p>
+            <div className="field">
+              <label>Admin roles</label>
+              <div className="role-checklist" style={{ maxHeight: 180, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
+                {roles.map((r) => (
+                  <label className="toggle" key={`a-${r.id}`}>
+                    <input
+                      type="checkbox"
+                      checked={adminRoleIds.has(r.id)}
+                      disabled={readOnly}
+                      onChange={() => togglePanelRole("admin_role_ids", r.id)}
+                    />
+                    <span>{r.name}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="field">
+              <label>Mod roles (read-only access)</label>
+              <div className="role-checklist" style={{ maxHeight: 180, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
+                {roles.map((r) => (
+                  <label className="toggle" key={`m-${r.id}`}>
+                    <input
+                      type="checkbox"
+                      checked={modRoleIds.has(r.id)}
+                      disabled={readOnly}
+                      onChange={() => togglePanelRole("mod_role_ids", r.id)}
+                    />
+                    <span>{r.name}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          <section className="section card" style={{ marginBottom: 16 }}>
+            <h2 className="section-title" style={{ marginTop: 0 }}>
               Custom reminder message
             </h2>
             <div className="field">
@@ -208,9 +275,13 @@ export default function SettingsPage() {
           </section>
 
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <button className="btn btn-primary" disabled={saving} onClick={() => void save()}>
-              {saving ? "Saving..." : "Save settings"}
-            </button>
+            {readOnly ? (
+              <span className="muted">You have read-only (Mod) access — changes are disabled.</span>
+            ) : (
+              <button className="btn btn-primary" disabled={saving} onClick={() => void save()}>
+                {saving ? "Saving..." : "Save settings"}
+              </button>
+            )}
           </div>
         </div>
       )}

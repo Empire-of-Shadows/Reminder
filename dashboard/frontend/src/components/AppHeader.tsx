@@ -40,7 +40,11 @@ export default function AppHeader({
         </h1>
         {left ?? (user && (
           <nav className="nav-links" style={{ marginLeft: 8 }}>
-            <NavLink to="/dashboard" className={navClass}>Servers</NavLink>
+            <NavLink to="/dashboard" className={navClass}>Stats</NavLink>
+            <NavLink to="/me/privacy" className={navClass}>Privacy</NavLink>
+            {user.can_access_settings_any && (
+              <NavLink to="/settings" className={navClass}>Settings</NavLink>
+            )}
           </nav>
         ))}
       </div>

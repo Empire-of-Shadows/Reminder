@@ -13,6 +13,20 @@ THREE_0 = 30 * 60  # 30 minutes
 ONE = 60 * 60      # 1 hour
 TWO = 2 * 60 * 60  # 2 hours
 
+def _default_roles() -> Dict[str, Any]:
+    """Canonical panel-role config, shared across the ecosystem dashboards."""
+    return {"admin_role_ids": [], "mod_role_ids": []}
+
+
+def _normalize_roles(raw: Any) -> Dict[str, Any]:
+    """Coerce a stored ``roles`` value into the canonical two-list shape."""
+    raw = raw if isinstance(raw, dict) else {}
+    return {
+        "admin_role_ids": list(raw.get("admin_role_ids") or []),
+        "mod_role_ids": list(raw.get("mod_role_ids") or []),
+    }
+
+
 def _default_premium() -> Dict[str, Any]:
     return {
         "enabled": False,
@@ -47,6 +61,7 @@ DEFAULT_GUILD_CONFIG_DICT = {
     "timers_channel": 0,
     "timers_message": True,
     "custom_message": "",
+    "roles": _default_roles(),
     "premium": _default_premium(),
     "bot_delay": _default_bot_delay(),
     "timestamps": _default_timestamps(),
@@ -62,6 +77,9 @@ class GuildConfig:
     timers_channel: int = 0
     timers_message: bool = True
     custom_message: str = ""
+    # Canonical panel-role config (roles.admin_role_ids / roles.mod_role_ids),
+    # consumed by the dashboard to gate the Settings page.
+    roles: Dict[str, Any] = field(default_factory=_default_roles)
     premium: Dict[str, Any] = field(default_factory=_default_premium)
     bot_delay: Dict[str, Any] = field(default_factory=_default_bot_delay)
     timestamps: Dict[str, Any] = field(default_factory=_default_timestamps)
@@ -80,6 +98,7 @@ class GuildConfig:
             "timers_channel": self.timers_channel,
             "timers_message": self.timers_message,
             "custom_message": self.custom_message,
+            "roles": self.roles,
             "premium": self.premium,
             "bot_delay": self.bot_delay,
             "timestamps": self.timestamps,
@@ -98,7 +117,7 @@ class GuildConfig:
         # Identify extra data (keys not in standard fields)
         standard_keys = {
             "guild_id", "_id", "enabled_bots", "bump_channel", "bump_role",
-            "timers_channel", "timers_message", "custom_message", "premium",
+            "timers_channel", "timers_message", "custom_message", "roles", "premium",
             "bot_delay", "timestamps", "created_at", "updated_at"
         }
         extra_data = {k: v for k, v in data.items() if k not in standard_keys}
@@ -111,6 +130,7 @@ class GuildConfig:
             timers_channel=data.get("timers_channel", 0),
             timers_message=data.get("timers_message", True),
             custom_message=data.get("custom_message", ""),
+            roles=_normalize_roles(data.get("roles")),
             premium=data.get("premium", _default_premium()),
             bot_delay=data.get("bot_delay", _default_bot_delay()),
             timestamps=data.get("timestamps", _default_timestamps()),

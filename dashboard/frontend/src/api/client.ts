@@ -135,6 +135,11 @@ export const api = {
     apiFetch<GuildBumpStats>(`/api/guilds/${guildId}/bump-stats`),
 };
 
+/** Build the bot-invite link for a specific guild (explicit click, no popup). */
+export function inviteLink(baseUrl: string, guildId: string): string {
+  return `${baseUrl}&guild_id=${guildId}`;
+}
+
 export interface PublicStats {
   servers: number;
   bots_tracked: number;
