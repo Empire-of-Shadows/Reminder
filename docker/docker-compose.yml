@@ -1,4 +1,4 @@
-name: ImperialReminder
+name: Empire-Reminder
 services:
   app:
     build:
@@ -19,7 +19,7 @@ services:
       retries: 3
       start_period: 60s
     volumes:
-      - ${HOST_LOG_DIR:-./logs}/Reminder:/app/log
+      - /mnt/4T/EmpireData/Reminder/Bot/logs:/app/logs
     restart: unless-stopped
     deploy:
       resources:
@@ -51,7 +51,7 @@ services:
       retries: 3
       start_period: 30s
     volumes:
-      - ${HOST_LOG_DIR:-./logs}/ReminderDashboard:/app/log
+      - /mnt/4T/EmpireData/Reminder/Bot/logs:/app/logs
     restart: unless-stopped
     deploy:
       resources:

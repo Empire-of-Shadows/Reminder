@@ -471,17 +471,62 @@ class CollectionManager:
             logger.info(f"Created {len(index_names)} indexes for {self.name}: {index_names}")
             return index_names
         except OperationFailure as e:
-            if e.code == 85:  # IndexOptionsConflict
-                logger.warning(f"Index conflict in {self.name}, dropping and recreating indexes")
-                await self.collection.drop_indexes()
-                index_names = await self.collection.create_indexes(self.config.indexes)
-                logger.info(f"Recreated {len(index_names)} indexes for {self.name}: {index_names}")
-                return index_names
+            # 85 = IndexOptionsConflict, 86 = IndexKeySpecsConflict: an existing index
+            # has a different spec than requested. Drop ONLY the conflicting index(es)
+            # and recreate them; every other index on the collection is left in place.
+            if e.code in (85, 86):
+                logger.warning(
+                    f"Index spec conflict on {self.name} (code {e.code}); "
+                    f"dropping and recreating only the conflicting index(es)."
+                )
+                return await self._recreate_conflicting_indexes()
+            # 13297 = DatabaseDifferCase (e.g. "Admin" vs system "admin"): cannot be
+            # fixed client-side; collection reads/writes still work through the driver.
+            if e.code == 13297:
+                logger.warning(
+                    f"Database name case conflict on {self.name} (code 13297); "
+                    f"skipping index creation. Collection reads/writes still proceed."
+                )
+                return []
             logger.error(f"Error creating indexes for {self.name}: {e}")
             raise
         except Exception as e:
             logger.error(f"Error creating indexes for {self.name}: {e}")
             raise
+
+    async def _recreate_conflicting_indexes(self) -> List[str]:
+        """Build indexes one at a time; for any that conflicts (code 85/86), drop the
+        existing index with the same name (or, if the name differs, the one with
+        matching keys) and recreate just that index. Non-conflicting indexes are
+        left untouched."""
+        created: List[str] = []
+        for index in self.config.indexes:
+            spec = index.document  # pymongo always fills in 'name' (auto-generated if unnamed)
+            name = spec.get("name")
+            try:
+                created.extend(await self.collection.create_indexes([index]))
+                continue
+            except OperationFailure as e:
+                if e.code not in (85, 86):
+                    raise
+            # Resolve the conflict: drop by requested name, else by matching key pattern.
+            try:
+                await self.collection.drop_index(name)
+            except OperationFailure as drop_err:
+                if drop_err.code != 27:  # 27 = IndexNotFound (existing index uses a different name)
+                    raise
+                existing = await self.collection.index_information()
+                wanted_key = list(spec["key"].items())
+                target = next(
+                    (n for n, info in existing.items()
+                     if n != "_id_" and info.get("key") == wanted_key),
+                    None,
+                )
+                if target:
+                    await self.collection.drop_index(target)
+            created.extend(await self.collection.create_indexes([index]))
+            logger.info(f"Repaired conflicting index '{name}' on {self.name}")
+        return created
 
     async def drop_indexes(self, index_names: List[str] = None):
         """Drop specified indexes or all non-default indexes."""

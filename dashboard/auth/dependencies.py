@@ -1,5 +1,5 @@
 from fastapi import Cookie, Depends, HTTPException
-from dashboard.auth.session import get_session
+from dashboard.auth.session import get_session, refresh_guilds_if_stale
 from dashboard.auth.signing import unsign_token
 from dashboard.config import SESSION_COOKIE_NAME, MANAGE_GUILD_PERMISSION
 
@@ -14,6 +14,8 @@ async def get_current_user(
     session = await get_session(session_id)
     if session is None:
         raise HTTPException(status_code=401, detail="Session expired")
+    # Keep the cached guild list self-healing (best-effort; never raises).
+    session = await refresh_guilds_if_stale(session)
     return session
 
 def user_can_manage_guild(session: dict, guild_id: str) -> bool:

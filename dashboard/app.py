@@ -101,16 +101,18 @@ async def health():
         "timestamp": time.time(),
         "service": "ImperialReminder Dashboard",
         "component": "ImperialReminder Dashboard - WebUI",
-        "uptime_seconds": round(time.time() - _START_TIME, 2),
+        "uptime": int(time.time() - _START_TIME),
         "frontend_built": os.path.isfile(_index_html),
     }
     try:
         client = db._get_client()
         await client.admin.command("ping")
         response["database_connected"] = True
+        response["checks"] = {"database": {"status": "healthy"}}
     except Exception:
         health_logger.warning("Mongo health ping failed", exc_info=True)
         response["database_connected"] = False
+        response["checks"] = {"database": {"status": "unhealthy"}}
         response["status"] = "degraded"
     return response
 

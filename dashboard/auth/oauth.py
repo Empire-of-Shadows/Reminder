@@ -36,7 +36,7 @@ _AUTHORIZE_URL = "https://discord.com/oauth2/authorize"
 _TOKEN_URL = f"{DISCORD_API_BASE}/oauth2/token"
 
 _ALLOWED_REDIRECT_PATTERN = re.compile(
-    r"^https?://(localhost(:\d+)?|([a-z0-9-]+\.)?empireofshadows\.club)(/.*)?"
+    r"^https?://(localhost(:\d+)?|([a-z0-9-]+\.)?eosofficial\.club)(/.*)?"
 )
 
 
@@ -105,7 +105,13 @@ async def discord_callback(code: str, state: str | None = None, response: Respon
         logger.warning("Discord OAuth exchange failed: %s", e)
         raise HTTPException(status_code=502, detail="Discord OAuth exchange failed")
 
-    session_token = await create_session(user_data, guilds)
+    session_token = await create_session(
+        user_data,
+        guilds,
+        access_token=access_token,
+        refresh_token=tokens.get("refresh_token"),
+        expires_in=tokens.get("expires_in"),
+    )
     logger.info("Session created for user %s", user_data.get("id"))
 
     # Redirect to originating page with session cookie

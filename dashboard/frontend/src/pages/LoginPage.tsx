@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { fetchPublicStats, type PublicStats } from "../api/client";
 
 function formatCount(n: number): string {
@@ -31,6 +32,9 @@ export default function LoginPage() {
         <a href="/auth/discord" className="cta">
           Login with Discord
         </a>
+        <p className="muted" style={{ marginTop: "0.75rem", fontSize: "0.85rem" }}>
+          By signing in you agree to our <Link to="/privacy">Privacy Policy</Link>.
+        </p>
 
         <div className="login-divider">Explore the ecosystem</div>
 

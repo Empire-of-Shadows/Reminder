@@ -41,6 +41,7 @@ class HealthCheckHandler(http.server.BaseHTTPRequestHandler):
     """HTTP handler for health check requests"""
 
     bot_instance = None
+    db_manager = None
 
     def do_GET(self):
         if self.path != '/health':
@@ -54,7 +55,7 @@ class HealthCheckHandler(http.server.BaseHTTPRequestHandler):
             "bot": "reminder",
             "service": "Discord Bump Reminder Bot",
             "timestamp": time.time(),
-            "uptime_seconds": round(time.time() - _start_time, 2),
+            "uptime": int(time.time() - _start_time),
             "pid": os.getpid(),
             "python_version": platform.python_version(),
             "discord_py_version": discord.__version__,
@@ -63,11 +64,21 @@ class HealthCheckHandler(http.server.BaseHTTPRequestHandler):
 
         if bot is not None:
             try:
-                response["discord_connected"] = bot.is_ready()
-                response["latency_ms"] = _safe_latency_ms(bot)
+                connected = bot.is_ready()
+                latency_ms = _safe_latency_ms(bot)
+                response["discord_connected"] = connected
+                response["latency_ms"] = latency_ms
+                if latency_ms is not None:
+                    response["gateway_latency_ms"] = latency_ms
                 response["guilds"] = len(bot.guilds)
                 response["shard_count"] = bot.shard_count or 1
                 response["cogs_loaded"] = len(bot.cogs)
+                response.setdefault("checks", {})["discord"] = {
+                    "status": "healthy" if connected else "unhealthy",
+                    "latency_ms": latency_ms,
+                }
+                if not connected:
+                    response["status"] = "degraded"
                 try:
                     response["commands_registered"] = len(bot.tree.get_commands())
                 except Exception:
@@ -78,14 +89,24 @@ class HealthCheckHandler(http.server.BaseHTTPRequestHandler):
             except Exception as e:
                 logger.warning(f"Failed to collect bot status: {e}")
                 response["discord_connected"] = False
+                response["status"] = "degraded"
+                response.setdefault("checks", {})["discord"] = {"status": "unhealthy"}
 
-            db_manager = getattr(bot, "db_manager", None)
+            db_manager = self.db_manager or getattr(bot, "db_manager", None)
             if db_manager is not None:
                 try:
-                    response["database_connected"] = bool(db_manager.is_connected)
+                    db_ok = bool(db_manager.is_connected)
+                    response["database_connected"] = db_ok
+                    response.setdefault("checks", {})["database"] = {
+                        "status": "healthy" if db_ok else "unhealthy"
+                    }
+                    if not db_ok:
+                        response["status"] = "degraded"
                 except Exception as e:
                     logger.warning(f"Failed to read database status: {e}")
                     response["database_connected"] = False
+                    response.setdefault("checks", {})["database"] = {"status": "unhealthy"}
+                    response["status"] = "degraded"
 
         try:
             payload = json.dumps(response).encode()
@@ -116,17 +137,20 @@ def stop_health_server():
         logger.info("Health check server stopped")
 
 
-def initialize_health_server(port=50006, bot=None):
+def initialize_health_server(port=50006, bot=None, db_manager=None):
     """
     Initialize the health server in a background thread.
 
     Args:
         port: Port to listen on (default: 50006)
         bot: Discord bot instance.
+        db_manager: Database manager (optional). Read lazily; falls back to
+            ``bot.db_manager`` when not passed.
     """
     global _health_server
 
     HealthCheckHandler.bot_instance = bot
+    HealthCheckHandler.db_manager = db_manager
 
     try:
         _health_server = ReusableTCPServer(("0.0.0.0", port), HealthCheckHandler)
