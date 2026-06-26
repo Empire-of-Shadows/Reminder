@@ -21,19 +21,20 @@ from pathlib import Path
 
 # Load env from docker/.env if it exists, otherwise use standard load_dotenv
 from dotenv import load_dotenv
-env_path = Path(__file__).parent / "docker" / ".env"
-if env_path.exists():
-    load_dotenv(env_path)
+_env_dir = Path(__file__).parent / "docker"
+if (_env_dir / ".env").exists():
+    load_dotenv(_env_dir / ".env")
 else:
     load_dotenv()
+# Dev override: docker/.env.local (gitignored) wins when present.
+load_dotenv(_env_dir / ".env.local", override=True)
 
 import discord
 
-from utils.bot import bot, TOKEN, s  # noqa: E402,F401
+from startup.bot import bot, TOKEN, s  # noqa: E402,F401
 from utils.logger import get_logger, setup_application_logging  # noqa: E402
-from utils.sync import load_cogs, attach_databases  # noqa: E402
-from utils.startup import (  # noqa: E402
-    log_all_commands,
+from startup.sync import load_cogs, attach_databases, log_all_commands  # noqa: E402
+from startup.phases import (  # noqa: E402
     log_startup_summary,
     startup_phase,
 )
@@ -243,6 +244,10 @@ def main():
     logger.info(f"=== Starting {APPLICATION_NAME} ===")
     logger.info(f"🐍 Python version: {sys.version}")
     logger.info(f"🤖 Discord.py version: {discord.__version__}")
+
+    if not TOKEN or not TOKEN.strip():
+        logger.error("❌ DISCORD_TOKEN is missing or empty. Set it before starting the bot.")
+        sys.exit(1)
 
     shutdown_event = asyncio.Event()
 

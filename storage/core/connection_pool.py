@@ -1,10 +1,16 @@
+# ───────────────────────────────────────────────────────────────────────────
+# VENDORED from storage_engine/ — DO NOT EDIT HERE.
+# Edit the master at <repo-root>/EmpireSystems/storage_engine/ and run:
+#     python tools/sync_storage_engine.py
+# Drift is enforced by:  python tools/sync_storage_engine.py --check
+# ───────────────────────────────────────────────────────────────────────────
 import time
 from typing import Dict, Any, Optional
 
 from pymongo import AsyncMongoClient
 from pymongo.errors import ConnectionFailure
 
-from utils.logger import get_logger
+from ..logging_compat import get_logger
 
 logger = get_logger("ConnectionPool")
 
