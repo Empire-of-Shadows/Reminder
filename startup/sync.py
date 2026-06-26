@@ -166,7 +166,7 @@ async def attach_databases():
 
     try:
         # Initialize DatabaseManager first
-        from storage.database_manager import db_manager
+        from storage.manager import db_manager
         try:
             await db_manager.initialize()
             result, is_success = await attach_attribute("db_manager", db_manager)

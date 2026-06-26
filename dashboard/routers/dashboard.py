@@ -18,7 +18,7 @@ from dashboard.auth.panel_role import require_panel_access, resolve_panel_role
 from dashboard.config import BOT_TOKEN, DISCORD_API_BASE, MANAGE_GUILD_PERMISSION
 from dashboard.services import stats as stats_service
 from storage.config_manager import get_guild_config_manager
-from storage.database_manager import db_manager
+from storage.manager import db_manager
 from storage.sub_systems.bump_config import BOT_DISPLAY_NAMES, SUPPORTED_BOTS
 from utils.logger import get_logger
 

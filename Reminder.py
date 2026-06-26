@@ -39,7 +39,7 @@ from startup.phases import (  # noqa: E402
     startup_phase,
 )
 from health_endpoint import initialize_health_server, stop_health_server  # noqa: E402
-from storage.database_manager import db_manager  # noqa: E402
+from storage.manager import db_manager  # noqa: E402
 
 # Initialize application-wide logging
 APPLICATION_NAME = "discord-bot-reminder"
