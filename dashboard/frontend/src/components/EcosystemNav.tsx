@@ -27,7 +27,7 @@ const APPS: EcoApp[] = [
   { key: "codex", name: "TheCodex", tagline: "Guide, polls & profiles", icon: "📖", href: "https://codex.eosofficial.club", host: "codex.eosofficial.club" },
   { key: "ecom", name: "Ecom", tagline: "Leveling & economy", icon: "💰", href: "https://ecom.eosofficial.club", host: "ecom.eosofficial.club" },
   { key: "reminder", name: "Reminder", tagline: "Bump reminders", icon: "⏰", href: "https://reminder.eosofficial.club", host: "reminder.eosofficial.club" },
-  { key: "quotes", name: "Quotes", tagline: "Scheduled quotes", icon: "💬", href: "https://quotes.eosofficial.club", host: "quotes.eosofficial.club" },
+  { key: "decree", name: "Quotes", tagline: "Scheduled quotes", icon: "💬", href: "https://decree.eosofficial.club", host: "decree.eosofficial.club" },
   { key: "health", name: "Health", tagline: "System status", icon: "🛡️", href: "https://health.eosofficial.club", host: "health.eosofficial.club" },
 ];
 
