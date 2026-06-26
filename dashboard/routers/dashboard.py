@@ -20,7 +20,7 @@ from dashboard.services import stats as stats_service
 from storage.config_manager import get_guild_config_manager
 from storage.manager import db_manager
 from storage.sub_systems.bump_config import BOT_DISPLAY_NAMES, SUPPORTED_BOTS
-from utils.logger import get_logger
+from storage.logging import get_logger
 
 logger = get_logger("dashboard.routers.dashboard")
 

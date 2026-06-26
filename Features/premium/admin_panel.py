@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 import os
 
 from utils.env import load_project_env
-from utils.logger import get_logger
+from storage.logging import get_logger
 
 logger = get_logger("AdminPanel")
 load_project_env()

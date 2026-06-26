@@ -32,7 +32,7 @@ load_dotenv(_env_dir / ".env.local", override=True)
 import discord
 
 from startup.bot import bot, TOKEN, s  # noqa: E402,F401
-from utils.logger import get_logger, setup_application_logging  # noqa: E402
+from storage.logging import get_logger, setup_application_logging  # noqa: E402
 from startup.sync import load_cogs, attach_databases, log_all_commands  # noqa: E402
 from startup.phases import (  # noqa: E402
     log_startup_summary,

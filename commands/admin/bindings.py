@@ -22,7 +22,7 @@ import discord
 
 from storage.config_manager import get_guild_config_manager
 from storage.audit_log import get_audit_log_manager
-from utils.logger import get_logger
+from storage.logging import get_logger
 
 # Re-export the static branding text the engine reads by name.
 from .panel_branding import OVERVIEW_FOOTER, SETUP_GUIDE_TEXT

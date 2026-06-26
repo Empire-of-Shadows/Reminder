@@ -1,6 +1,6 @@
 from pymongo import IndexModel
 from storage.core.collection_config import CollectionConfig
-from utils.logger import get_logger
+from storage.logging import get_logger
 
 logger = get_logger("DefineCollections")
 
