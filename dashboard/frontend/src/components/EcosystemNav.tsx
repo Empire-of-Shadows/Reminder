@@ -28,6 +28,7 @@ const APPS: EcoApp[] = [
   { key: "ecom", name: "Ecom", tagline: "Leveling & economy", icon: "💰", href: "https://ecom.eosofficial.club", host: "ecom.eosofficial.club" },
   { key: "reminder", name: "Reminder", tagline: "Bump reminders", icon: "⏰", href: "https://reminder.eosofficial.club", host: "reminder.eosofficial.club" },
   { key: "decree", name: "Quotes", tagline: "Scheduled quotes", icon: "💬", href: "https://decree.eosofficial.club", host: "decree.eosofficial.club" },
+  { key: "relay", name: "Stygian Relay", tagline: "Message forwarding", icon: "🔀", href: "https://relay.eosofficial.club", host: "relay.eosofficial.club" },
   { key: "health", name: "Health", tagline: "System status", icon: "🛡️", href: "https://health.eosofficial.club", host: "health.eosofficial.club" },
 ];
 
