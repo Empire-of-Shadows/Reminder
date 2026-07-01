@@ -1,112 +1,87 @@
 <div align="center">
 
-# ⏰ Imperial Reminder
+# Imperial Reminder
 
-### Never Miss a Server Bump Again
+**Automated server bump tracker and reminder bot for Empire of Shadows**
 
-[![Discord](https://img.shields.io/badge/Discord-Bot-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com)
-[![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
-[![MongoDB](https://img.shields.io/badge/MongoDB-Database-47A248?style=for-the-badge&logo=mongodb&logoColor=white)](https://www.mongodb.com/)
-[![License](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)](LICENSE.md)
+[![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)](https://python.org)
+[![discord.py](https://img.shields.io/badge/discord.py-2.7-5865F2?logo=discord&logoColor=white)](https://github.com/Rapptz/discord.py)
+[![MongoDB](https://img.shields.io/badge/MongoDB-47A248?logo=mongodb&logoColor=white)](https://www.mongodb.com)
+[![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](https://docs.docker.com/compose/)
+
+Tracks successful server bumps across every major listing platform and sends timely reminders the moment each cooldown expires — so your server stays visible without anyone watching the clock.
 
 </div>
 
 ---
 
-## 📖 About
-
-**Imperial Reminder** is a powerful Discord bot that automatically tracks and reminds you when it's time to bump your server on popular Discord listing services. Keep your server at the top of the listings without constantly checking the clock!
-
-The bot intelligently detects successful bumps across multiple platforms, tracks cooldown periods, and sends timely reminders to ensure you never miss an opportunity to promote your server.
-
 ## ✨ Features
 
-### 🎯 Multi-Platform Support
-Track bumps across all major Discord server listing services:
-- **Disboard** (2-hour cooldown)
-- **BumpIt** (1-hour cooldown)
-- **Bump4You** (2-hour cooldown)
-- **WeBump** (2-hour cooldown)
-- **OneBump** (2-hour cooldown, 30-min premium)
+### 🎯 Multi-Platform Bump Tracking
+
+Detects and tracks successful bumps across all major Discord server listing services:
+
+| Platform | Default Cooldown | Premium Cooldown |
+|---|---|---|
+| **Disboard** | 2 hours | — |
+| **BumpIt** | 1 hour | — |
+| **Bump4You** | 2 hours | — |
+| **WeBump** | 2 hours | — |
+| **OneBump** | 2 hours | 30 minutes |
 
 ### 🔔 Smart Reminders
-- **Automatic Detection**: Instantly recognizes when you successfully bump on any supported platform
-- **Timely Notifications**: Get reminded exactly when your cooldown expires
-- **Role Mentions**: Configure custom bump roles to notify your team
-- **Batch Notifications**: Combines multiple ready-to-bump reminders to reduce spam
+- Recognizes successful bump messages instantly across all supported platforms
+- Sends reminders exactly when each platform's cooldown expires
+- Configurable role mentions to notify your bump team
+- Batches multiple ready-to-bump notifications to reduce spam
 
-### ⚙️ Highly Configurable
-- **Per-Server Settings**: Each server gets its own independent configuration
-- **Custom Delays**: Override default cooldown periods for each bump service
-- **Custom Messages**: Personalize reminder messages with role and bot mentions
-- **Flexible Channels**: Separate channels for bump commands and timer displays
+### 🧠 Intelligent Detection
+
+The bot uses a **four-layer detection system** to catch bump success messages reliably — Discord's event delivery is inconsistent for webhook messages:
+
+1. Real-time `on_message` monitoring
+2. Message edit tracking (`on_message_edit`) for async embed population
+3. Raw gateway event parsing for webhook messages
+4. Force-refetch with retries for platforms with delayed embeds (e.g. WeBump)
+
+### 📊 Live Timer Display
+
+- Real-time status embed showing all bump cooldowns and remaining times
+- Visual indicators for which platforms are ready to bump
+- Auto-updates as cooldowns expire
+
+### ⚙️ Configurable Per Server
+- Separate channels for bump commands and live timer display
+- Custom reminder messages with `{bump_role}` and `{bots}` placeholders
+- Per-bot cooldown overrides
+- Toggle individual bump platforms on or off
 
 ### 💎 Premium Features
-- **Webhook Integration**: Send reminders via custom webhooks for a branded experience
-- **Reduced Cooldowns**: OneBump cooldown reduced to 30 minutes (where applicable)
-- **Priority Support**: Get help faster with premium status
+- Webhook delivery for branded reminder messages
+- OneBump cooldown reduced to 30 minutes
+- Premium activation via the admin panel
 
-### 📊 Timer Display
-- **Live Status Board**: Real-time embed showing all bump cooldowns and remaining times
-- **Visual Indicators**: Quickly see which services are ready to bump
-- **Auto-Updates**: Timer board refreshes automatically as cooldowns expire
+### ⚙️ Admin Panel
+> `/admin panel` — unified guild configuration (Discord Components v2). Sections: **Core Setup** (bump channel, bump role, timers channel), **Bump Bots** (which platforms to track and their cooldowns), **Messages** (custom reminder text and live timer toggle), **Premium** (activation and webhook config).
 
-## 🎮 Commands
+---
 
-### `/config`
-Configure the bot for your server.
+## 🔧 Tech Stack
 
-**Options:**
-- `bump_channel` - Set the channel where bump reminders are sent
-- `bump_role` - Set the role to mention when reminders are triggered
-- `timers_channel` - Set the channel for the timer display embed
-
-### `/bump`
-Manually trigger a bump reminder for testing or immediate notification.
-
-### Bump Settings (Interactive)
-Access advanced settings through the interactive button interface:
-- Enable/disable specific bump services
-- Customize cooldown delays for each service
-- Set custom reminder messages
-- Configure premium features
-
-## 🛠️ Technology Stack
-
-- **Discord.py 2.5+** - Modern async Discord bot framework
-- **MongoDB** - Persistent storage for guild configurations and timestamps
-- **Docker** - Containerized deployment for easy hosting
-- **Custom Timer System** - Robust, production-ready scheduling with jitter and retry logic
-
-## 🌟 Highlights
-
-### Intelligent Message Detection
-The bot uses a **four-layer detection system** to catch bump success messages:
-1. Real-time message monitoring
-2. Message edit tracking (for async embeds)
-3. Raw gateway event parsing
-4. Webhook message detection
-
-This ensures reliable detection even with Discord's inconsistent event delivery.
-
-### Production-Ready Timer System
-- **Monotonic time tracking** prevents drift from system clock changes
-- **Exponential backoff** with configurable retries
-- **Jitter support** prevents thundering herd issues
-- **Graceful shutdown** preserves timer state across restarts
-
-## 📝 License
-
-This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to open an issue or submit a pull request.
+| Layer | Technology |
+|---|---|
+| **Runtime** | Python 3.10+ |
+| **Discord** | discord.py 2.7 |
+| **Database** | MongoDB · pymongo (async) |
+| **Dashboard** | FastAPI · React 19 · Vite · TypeScript |
+| **Timer System** | Monotonic scheduling with jitter, exponential backoff, and graceful restart persistence |
+| **Admin Panel** | Discord Components v2 (vendored `admin_engine`) |
+| **Storage** | Vendored `storage_engine` |
+| **Deployment** | Docker Compose · `obsidian_grid` network |
 
 ---
 
 <div align="center">
-
-**Built with ❤️ for the Empire of Shadows community**
-
+<sub>Part of the **Empire of Shadows** ecosystem · `Informatinal/ImperialReminder`</sub>
 </div>

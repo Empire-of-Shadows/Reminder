@@ -1,0 +1,103 @@
+"""Dashboard configuration - environment variables and constants."""
+
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parent.parent / "docker" / ".env")
+
+
+# Discord OAuth2 - shared GateKeeper bot across the ecosystem.
+# Identical GATEKEEPER_* credentials are used by TheHost, TheCodex, EcomBackend
+# and ImperialReminder so a single Discord OAuth app powers every dashboard.
+DASHBOARD_CLIENT_ID = os.getenv("GATEKEEPER_CLIENT_ID", "")
+DASHBOARD_CLIENT_SECRET = os.getenv("GATEKEEPER_CLIENT_SECRET", "")
+if not DASHBOARD_CLIENT_ID:
+    raise RuntimeError("GATEKEEPER_CLIENT_ID environment variable is required")
+if not DASHBOARD_CLIENT_SECRET:
+    raise RuntimeError("GATEKEEPER_CLIENT_SECRET environment variable is required")
+
+# ImperialReminder bot token - used to check which guilds the bot is in
+BOT_TOKEN = os.getenv("DISCORD_TOKEN", "") or os.getenv("TOKEN", "")
+REDIRECT_URI = os.getenv(
+    "GATEKEEPER_REDIRECT_URI",
+    "http://localhost:54014/auth/discord/callback",
+)
+DISCORD_API_BASE = "https://discord.com/api/v10"
+
+# MongoDB - ImperialReminder bot data (guild config, etc.).
+MONGO_URI = os.getenv("MONGO_URI", "")
+
+# MongoDB - shared session store (WebSessions.SharedSessions + .OAuthStates),
+# written by all ecosystem dashboards. Point this at the SAME Mongo the other
+# bots use so a login on one dashboard is valid on all of them.
+SHARED_SESSIONS_URI = os.getenv("SHARED_SESSIONS_URI", "")
+
+# Session signing (itsdangerous URLSafeTimedSerializer key).
+# DASHBOARD_SECRET_KEY must be IDENTICAL across TheHost/TheCodex/EcomBackend/
+# ImperialReminder so a cookie set by one service validates on the others.
+SECRET_KEY = os.getenv("DASHBOARD_SECRET_KEY", "")
+if not SECRET_KEY:
+    raise RuntimeError("DASHBOARD_SECRET_KEY environment variable is required")
+SESSION_COOKIE_NAME = os.getenv("SESSION_COOKIE_NAME", "eos_session")
+SESSION_MAX_AGE_DAYS = int(os.getenv("SESSION_MAX_AGE_DAYS", "30"))
+
+# Cookie domain — set to ".eosofficial.club" in production for cross-subdomain SSO
+COOKIE_DOMAIN = os.getenv("COOKIE_DOMAIN") or None
+IS_PRODUCTION = os.getenv("ENVIRONMENT", "development").lower() == "production"
+
+# Server
+HOST = os.getenv("DASHBOARD_HOST", "0.0.0.0")
+PORT = int(os.getenv("DASHBOARD_PORT", "54014"))
+
+# CORS — filter falsy entries so an unset BASE_URL doesn't leak an empty origin.
+CORS_ORIGINS = [
+    o
+    for o in [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:54014",
+        "http://127.0.0.1:54014",
+        os.getenv("BASE_URL"),
+    ]
+    if o
+]
+
+# Discord permission flag for MANAGE_GUILD
+MANAGE_GUILD_PERMISSION = 0x20
+
+
+def _validate_config() -> None:
+    """Fail fast on missing/misconfigured environment rather than 500ing later.
+
+    The dashboard cannot function without OAuth credentials, the bot token (live
+    guild checks), and the Mongo URI. In production, the Secure cookie flag and
+    CORS origin also depend on ENVIRONMENT/BASE_URL being set correctly - a
+    silent wrong default there is a security regression.
+    """
+    required = {
+        "GATEKEEPER_CLIENT_ID": DASHBOARD_CLIENT_ID,
+        "GATEKEEPER_CLIENT_SECRET": DASHBOARD_CLIENT_SECRET,
+        "DISCORD_TOKEN": BOT_TOKEN,
+        "MONGO_URI": MONGO_URI,
+        "SHARED_SESSIONS_URI": SHARED_SESSIONS_URI,
+    }
+    missing = [name for name, val in required.items() if not val]
+    if missing:
+        raise RuntimeError(
+            f"Missing required environment variables: {', '.join(missing)}"
+        )
+
+    if IS_PRODUCTION:
+        if not os.getenv("BASE_URL"):
+            raise RuntimeError(
+                "BASE_URL must be set in production (used for the CORS origin "
+                "and cookie scope)"
+            )
+        if "localhost" in REDIRECT_URI or "127.0.0.1" in REDIRECT_URI:
+            raise RuntimeError(
+                "GATEKEEPER_REDIRECT_URI still points at localhost in production"
+            )
+
+
+_validate_config()

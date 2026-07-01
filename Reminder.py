@@ -1,124 +1,266 @@
+"""
+ImperialReminder Discord bot — main orchestrator.
+
+Unified startup sequence (mirrors Ecom / TheHost / TheCodex):
+    1. Load env from docker/.env (with root .env fallback)
+    2. setup_application_logging  → "Application logging initialized for: discord-bot-reminder"
+    3. main(): banner + Python/discord.py versions
+    4. _async_main(): install signal handlers → init DatabaseManager → start health endpoint (50014)
+    5. start_services(): bot.start raced against shutdown_event
+    6. on_ready (idempotent via _init_done):
+       Database Attachment → Cog Loading → Command Sync → Status Setup → Timer Reschedule
+    7. shutdown_handler(): health → DB → bot
+"""
+
 import asyncio
-import os
+import logging
 import signal
-from typing import Optional
+import sys
+import time
+from pathlib import Path
 
+# Load env from docker/.env if it exists, otherwise use standard load_dotenv
 from dotenv import load_dotenv
-from shared_bot import bot  # bot instance only; no secrets imported
-from utils.logger import get_logger
-
-logger = get_logger("Leveling")
-
-def _load_env() -> tuple[str, int]:
+_env_dir = Path(__file__).parent / "docker"
+if (_env_dir / ".env").exists():
+    load_dotenv(_env_dir / ".env")
+else:
     load_dotenv()
-    token = os.getenv("TOKEN")
-    app_id = os.getenv("DISCORD_CLIENT_ID")  # needed by the bot (validated by shared_bot)
+# Dev override: docker/.env.local (gitignored) wins when present.
+load_dotenv(_env_dir / ".env.local", override=True)
 
-    if not token:
-        logger.critical("Missing TOKEN environment variable.")
-        raise SystemExit(2)
+import discord
 
-    if not app_id:
-        logger.critical("Missing DISCORD_CLIENT_ID environment variable.")
-        raise SystemExit(2)
+from startup.bot import bot, TOKEN, s  # noqa: E402,F401
+from storage.logging import get_logger, setup_application_logging  # noqa: E402
+from startup.sync import load_cogs, attach_databases, log_all_commands  # noqa: E402
+from startup.phases import (  # noqa: E402
+    log_startup_summary,
+    startup_phase,
+)
+from health_endpoint import initialize_health_server, stop_health_server  # noqa: E402
+from storage.manager import db_manager  # noqa: E402
 
-    try:
-        return token, int(app_id)
-    except ValueError:
-        logger.critical("DISCORD_CLIENT_ID must be an integer.")
-        raise SystemExit(2)
+# Initialize application-wide logging
+APPLICATION_NAME = "discord-bot-reminder"
+HEALTH_PORT = 50014
 
+app_logger = setup_application_logging(
+    app_name=APPLICATION_NAME,
+    log_level=logging.INFO,
+    log_dir="logs",
+    enable_performance_logging=True,
+    max_file_size=20 * 1024 * 1024,  # 20 MB
+    backup_count=10,
+)
 
-async def shutdown_handler(bot_instance, reason: str = "shutdown"):
-    logger.info(f"Initiating graceful shutdown due to {reason}...")
-    try:
-        if hasattr(bot_instance, "rotate_status") and bot_instance.rotate_status:
-            bot_instance.rotate_status.cancel()
-            logger.info("Status rotation stopped")
-    except Exception as e:
-        logger.error(f"Error stopping status rotation: {e}")
-
-    try:
-        # Stop OAuth server
-        if hasattr(bot_instance, "oauth_server") and bot_instance.oauth_server:
-            await bot_instance.oauth_server.stop()
-            logger.info("OAuth server stopped")
-    except Exception as e:
-        logger.error(f"Error stopping OAuth server: {e}")
-
-    try:
-        if not bot_instance.is_closed():
-            await bot_instance.close()
-            logger.info("Discord bot shutdown completed")
-    except Exception as shutdown_error:
-        logger.error(f"Error during bot shutdown: {shutdown_error}")
+# Main logger for this module
+logger = get_logger("main")
 
 
-def _install_signal_handlers(loop: asyncio.AbstractEventLoop, stop_event: asyncio.Event):
-    def _trigger(sig_name: str):
-        logger.info(f"Received {sig_name}, signaling shutdown...")
-        stop_event.set()
+async def on_ready():
+    """
+    Handle bot readiness. Idempotent across gateway reconnects via _init_done.
 
-    for sig in (signal.SIGINT, signal.SIGTERM):
+    On first ready: attach databases, load cogs, sync commands, set status,
+    reschedule timers, log startup summary. On reconnect: refresh presence only.
+    """
+    if getattr(bot, "_init_done", False):
         try:
-            loop.add_signal_handler(sig, _trigger, sig.name)
-        except NotImplementedError:
-            # Fallback for platforms where add_signal_handler is not implemented (e.g., Windows)
-            signal.signal(sig, lambda *_: _trigger(sig.name))
+            await bot.change_presence(status=discord.Status.online)
+            logger.info("🔁 Reconnect detected — presence refreshed, init skipped.")
+        except Exception as e:
+            logger.error(f"❌ Error refreshing presence on reconnect: {e}")
+        return
 
+    logger.info(f"🚀 Bot logged in as {bot.user}")
+    logger.info(
+        f"📊 Connected to {len(bot.guilds)} guilds with "
+        f"{sum(g.member_count or 0 for g in bot.guilds)} total members"
+    )
 
-async def start_services():
-    token, _ = _load_env()
-
-    stop_event = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    _install_signal_handlers(loop, stop_event)
-
-    bot_task: Optional[asyncio.Task] = None
     try:
-        bot_task = asyncio.create_task(bot.start(token), name="discord-bot")
-        logger.info("Discord bot task started")
-        # Wait until either bot stops or we receive a stop signal
+        async with startup_phase("Database Attachment"):
+            await attach_databases()
+    except Exception:
+        logger.error("❌ Error during database attachment", exc_info=True)
+        return  # Can't operate without attached managers
+
+    try:
+        async with startup_phase("Cog Loading"):
+            await load_cogs()
+    except Exception as cog_error:
+        logger.error(f"❌ Error during cog loading: {cog_error}", exc_info=True)
+
+    try:
+        async with startup_phase("Command Sync"):
+            synced_global = await bot.tree.sync()
+            logger.info(f"🔄 Resynced global commands: {len(synced_global)} registered.")
+    except Exception as sync_error:
+        logger.error(f"❌ Error during command sync: {sync_error}", exc_info=True)
+
+    try:
+        async with startup_phase("Status Setup"):
+            await bot.change_presence(status=discord.Status.online)
+    except Exception as status_error:
+        logger.error(f"❌ Error during status setup: {status_error}", exc_info=True)
+
+    # Reschedule timers for all guilds. The StartUp cog's on_ready listener misses
+    # the boot dispatch (the cog is loaded inside this handler), so kick it
+    # explicitly now that cogs are loaded and managers attached.
+    try:
+        async with startup_phase("Timer Reschedule"):
+            startup_cog = bot.get_cog("StartUp")
+            if startup_cog:
+                await startup_cog.reschedule_all_guilds()
+            else:
+                logger.warning("⚠️ StartUp cog not found; timers were not rescheduled")
+    except Exception as e:
+        logger.error(f"❌ Error rescheduling timers on startup: {e}", exc_info=True)
+
+    log_startup_summary()
+    logger.info("🎉 Bot is fully online and operational!")
+
+    try:
+        await log_all_commands(bot)
+    except Exception as cmd_log_error:
+        logger.error(f"❌ Error logging commands: {cmd_log_error}")
+
+    bot._init_done = True
+
+
+bot.event(on_ready)
+
+
+async def shutdown_handler():
+    """Graceful shutdown: health server → database → bot."""
+    shutdown_start = time.perf_counter()
+    logger.info("🛑 Initiating graceful shutdown...")
+
+    try:
+        stop_health_server()
+    except Exception as e:
+        logger.error(f"❌ Error stopping health server: {e}")
+
+    try:
+        logger.info("🔄 Closing database connections...")
+        await db_manager.close()
+        logger.info("✅ Database connections closed")
+    except Exception as e:
+        logger.error(f"❌ Error during database cleanup: {e}")
+
+    try:
+        if not bot.is_closed():
+            await bot.close()
+            logger.info("✅ Bot connection closed")
+    except Exception as shutdown_error:
+        logger.error(f"❌ Error during bot shutdown: {shutdown_error}")
+
+    duration = time.perf_counter() - shutdown_start
+    logger.info(f"🏁 Graceful shutdown completed in {duration:.2f}s")
+
+
+async def start_services(shutdown_event: asyncio.Event):
+    """Start the bot and await either its exit or a shutdown signal."""
+    bot_task = asyncio.create_task(bot.start(TOKEN), name="bot_task")
+    shutdown_wait = asyncio.create_task(shutdown_event.wait(), name="shutdown_wait")
+
+    try:
         done, pending = await asyncio.wait(
-            {bot_task, asyncio.create_task(stop_event.wait(), name="shutdown-waiter")},
-            return_when=asyncio.FIRST_COMPLETED,
+            [bot_task, shutdown_wait], return_when=asyncio.FIRST_COMPLETED
         )
 
-        if stop_event.is_set():
-            await shutdown_handler(bot, reason="signal")
-        else:
-            # Bot task finished first; check for exceptions
-            if bot_task in done:
-                exc = bot_task.exception()
-                if exc:
-                    logger.error("Bot task failed", exc_info=exc)
-                    raise exc
-                logger.info("Bot exited cleanly")
+        if shutdown_wait in done:
+            logger.info("🛑 Shutdown signal received, stopping services...")
+        elif bot_task in done:
+            try:
+                bot_task.result()
+            except Exception as e:
+                logger.error(f"💥 Bot stopped unexpectedly: {e}")
 
+        for task in pending:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
     except asyncio.CancelledError:
-        logger.info("Services received shutdown cancellation")
-        await shutdown_handler(bot, reason="cancelled")
-    except Exception as e:
-        logger.error(f"Error in services: {e}", exc_info=True)
-        await shutdown_handler(bot, reason="error")
-        raise
+        logger.info("🔄 Services cancelled during shutdown")
     finally:
-        # Ensure the bot task is cleaned up
         if bot_task and not bot_task.done():
             bot_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
+            try:
                 await bot_task
+            except asyncio.CancelledError:
+                pass
+        await shutdown_handler()
+
+
+def _install_signal_handlers(loop: asyncio.AbstractEventLoop, shutdown_event: asyncio.Event):
+    """Install SIGINT/SIGTERM handlers (graceful no-op on Windows)."""
+    def _signal_handler(sig_name: str):
+        logger.info(f"📡 Received {sig_name} signal, initiating shutdown...")
+        shutdown_event.set()
+
+    signals_to_handle = []
+    if hasattr(signal, "SIGINT"):
+        signals_to_handle.append(signal.SIGINT)
+    if hasattr(signal, "SIGTERM"):
+        signals_to_handle.append(signal.SIGTERM)
+
+    for sig in signals_to_handle:
+        try:
+            loop.add_signal_handler(sig, _signal_handler, sig.name)
+        except NotImplementedError:
+            pass
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to register signal handler for {sig.name}: {e}")
+
+
+async def _async_main(shutdown_event: asyncio.Event):
+    """Async entry: install signals, init DB, start health, start services."""
+    loop = asyncio.get_running_loop()
+    _install_signal_handlers(loop, shutdown_event)
+
+    try:
+        logger.info("🔄 Initializing database manager...")
+        await db_manager.initialize()
+        logger.info("✅ Database manager initialized successfully")
+    except Exception as e:
+        logger.critical(f"💥 Failed to initialize database manager: {e}")
+        raise
+
+    try:
+        initialize_health_server(port=HEALTH_PORT, bot=bot, db_manager=db_manager)
+        logger.info("✅ Health check endpoint initialized")
+    except Exception as e:
+        logger.error(f"❌ Failed to start health endpoint: {e}")
+
+    await start_services(shutdown_event)
+
+
+def main():
+    """Process entry point."""
+    logger.info(f"=== Starting {APPLICATION_NAME} ===")
+    logger.info(f"🐍 Python version: {sys.version}")
+    logger.info(f"🤖 Discord.py version: {discord.__version__}")
+
+    if not TOKEN or not TOKEN.strip():
+        logger.error("❌ DISCORD_TOKEN is missing or empty. Set it before starting the bot.")
+        sys.exit(1)
+
+    shutdown_event = asyncio.Event()
+
+    try:
+        asyncio.run(_async_main(shutdown_event))
+    except KeyboardInterrupt:
+        logger.info("⌨️ Keyboard interrupt received.")
+    except Exception:
+        logger.critical("💥 Fatal error occurred in main execution", exc_info=True)
+        raise
+    finally:
+        logger.info(f"=== {APPLICATION_NAME} shutdown complete ===")
 
 
 if __name__ == "__main__":
-    import contextlib
-    try:
-        asyncio.run(start_services())
-    except KeyboardInterrupt:
-        logger.info("Shutdown initiated by KeyboardInterrupt")
-    except SystemExit as e:
-        # Propagate non-zero exit for CI/Orchestration visibility
-        raise
-    except Exception as e:
-        logger.error(f"Fatal error: {e}", exc_info=True)
-        raise SystemExit(1)
+    main()
