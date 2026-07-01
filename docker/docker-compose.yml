@@ -19,7 +19,7 @@ services:
       retries: 3
       start_period: 60s
     volumes:
-      - /mnt/4T/EmpireData/Reminder/Bot/logs:/app/logs
+      - /mnt/4T/EmpireData/Reminder/Bot/logs:/app/log
     restart: unless-stopped
     deploy:
       resources:
@@ -51,7 +51,7 @@ services:
       retries: 3
       start_period: 30s
     volumes:
-      - /mnt/4T/EmpireData/Reminder/Bot/logs:/app/logs
+      - /mnt/4T/EmpireData/Reminder/Bot/logs:/app/log
     restart: unless-stopped
     deploy:
       resources:
