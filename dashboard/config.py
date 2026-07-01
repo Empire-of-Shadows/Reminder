@@ -21,7 +21,7 @@ if not DASHBOARD_CLIENT_SECRET:
 BOT_TOKEN = os.getenv("DISCORD_TOKEN", "") or os.getenv("TOKEN", "")
 REDIRECT_URI = os.getenv(
     "GATEKEEPER_REDIRECT_URI",
-    "http://localhost:54006/auth/discord/callback",
+    "http://localhost:54014/auth/discord/callback",
 )
 DISCORD_API_BASE = "https://discord.com/api/v10"
 
@@ -48,7 +48,7 @@ IS_PRODUCTION = os.getenv("ENVIRONMENT", "development").lower() == "production"
 
 # Server
 HOST = os.getenv("DASHBOARD_HOST", "0.0.0.0")
-PORT = int(os.getenv("DASHBOARD_PORT", "54006"))
+PORT = int(os.getenv("DASHBOARD_PORT", "54014"))
 
 # CORS — filter falsy entries so an unset BASE_URL doesn't leak an empty origin.
 CORS_ORIGINS = [
@@ -56,8 +56,8 @@ CORS_ORIGINS = [
     for o in [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
-        "http://localhost:54006",
-        "http://127.0.0.1:54006",
+        "http://localhost:54014",
+        "http://127.0.0.1:54014",
         os.getenv("BASE_URL"),
     ]
     if o

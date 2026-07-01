@@ -5,7 +5,7 @@ Unified startup sequence (mirrors Ecom / TheHost / TheCodex):
     1. Load env from docker/.env (with root .env fallback)
     2. setup_application_logging  → "Application logging initialized for: discord-bot-reminder"
     3. main(): banner + Python/discord.py versions
-    4. _async_main(): install signal handlers → init DatabaseManager → start health endpoint (50006)
+    4. _async_main(): install signal handlers → init DatabaseManager → start health endpoint (50014)
     5. start_services(): bot.start raced against shutdown_event
     6. on_ready (idempotent via _init_done):
        Database Attachment → Cog Loading → Command Sync → Status Setup → Timer Reschedule
@@ -43,7 +43,7 @@ from storage.manager import db_manager  # noqa: E402
 
 # Initialize application-wide logging
 APPLICATION_NAME = "discord-bot-reminder"
-HEALTH_PORT = 50006
+HEALTH_PORT = 50014
 
 app_logger = setup_application_logging(
     app_name=APPLICATION_NAME,

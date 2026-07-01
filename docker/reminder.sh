@@ -17,12 +17,16 @@ BACKUP_TAG_DASH="imperial-reminder-dashboard:backup"
 HEALTH_CHECK_TIMEOUT=120  # seconds to wait for health check
 
 NO_CACHE=0
+LOCAL=0
 # Git branch to build from. Override at runtime with -b/--branch.
 BRANCH=Dev
 while [ $# -gt 0 ]; do
     case "$1" in
         -n|--no-cache)
             NO_CACHE=1
+            ;;
+        -l|--local)
+            LOCAL=1
             ;;
         -b|--branch)
             shift
@@ -36,19 +40,46 @@ while [ $# -gt 0 ]; do
             BRANCH="${1#*=}"
             ;;
         -h|--help)
-            echo "Usage: $0 [-n|--no-cache] [-b|--branch <name>]"
+            echo "Usage: $0 [-n|--no-cache] [-l|--local] [-b|--branch <name>]"
             echo "  -n, --no-cache       Build images from scratch (skip Docker layer cache)"
+            echo "  -l, --local          Build + run from LOCAL files (bot + dashboard) via"
+            echo "                       docker-compose.local.yml; no GitHub clone, no deploy key."
             echo "  -b, --branch <name>  Git branch to build from (default: Dev)"
             exit 0
             ;;
         *)
             echo "Unknown argument: $1"
-            echo "Usage: $0 [-n|--no-cache] [-b|--branch <name>]"
+            echo "Usage: $0 [-n|--no-cache] [-l|--local] [-b|--branch <name>]"
             exit 1
             ;;
     esac
     shift
 done
+
+# ── Local test mode ─────────────────────────────────────────────────────────
+# Build and run the full stack (bot + dashboard) from the local working tree
+# using docker-compose.local.yml. Runs in the foreground so Ctrl+C stops it, and
+# deliberately skips the production backup / health-gate / rollback machinery.
+if [ "$LOCAL" = "1" ]; then
+    LOCAL_COMPOSE="docker-compose.local.yml"
+    echo "==== ImperialReminder LOCAL test stack (bot + dashboard) ===="
+    if ! command -v docker &> /dev/null; then
+        echo "Docker is not installed or not in PATH"; exit 1
+    fi
+    if [ ! -f "$LOCAL_COMPOSE" ]; then
+        echo "$LOCAL_COMPOSE not found in $SCRIPT_DIR"; exit 1
+    fi
+    if [ ! -f ".env.local" ]; then
+        echo "Warning: .env.local not found - dev overrides (token, Mongo IP, dashboard) will be missing"
+    fi
+    if [ "$NO_CACHE" = "1" ]; then
+        docker compose -f "$LOCAL_COMPOSE" build --no-cache
+    fi
+    echo "  Bot:       http://localhost:50014/health"
+    echo "  Dashboard: http://localhost:54014"
+    echo "Starting (Ctrl+C to stop)..."
+    exec docker compose -f "$LOCAL_COMPOSE" up --build
+fi
 
 echo "==== Starting ImperialReminder Deployment ===="
 echo "Timestamp: $(date)"
@@ -199,8 +230,8 @@ if $BUILD_CMD; then
         echo "==== Deployment Successful! ===="
         echo "Timestamp: $(date)"
         echo ""
-        echo "  Bot:       $BOT_CONTAINER (port 50006)"
-        echo "  Dashboard: $DASH_CONTAINER (port 54006)"
+        echo "  Bot:       $BOT_CONTAINER (port 50014)"
+        echo "  Dashboard: $DASH_CONTAINER (port 54014)"
 
         # Clean up backup images
         docker rmi -f "$BACKUP_TAG_BOT" 2>/dev/null || true

@@ -11,9 +11,9 @@ services:
     container_name: reminder
     image: imperial-reminder
     ports:
-      - "50006:50006"  # Health check HTTP endpoint
+      - "50014:50014"  # Health check HTTP endpoint
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:50006/health || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:50014/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -39,13 +39,13 @@ services:
     env_file:
       - .env
     environment:
-      - DASHBOARD_PORT=54006
+      - DASHBOARD_PORT=54014
     container_name: reminder-dashboard
     image: imperial-reminder-dashboard
     ports:
-      - "54006:54006"
+      - "54014:54014"
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:54006/health || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:54014/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
