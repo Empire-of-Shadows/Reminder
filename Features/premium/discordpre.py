@@ -2,7 +2,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 import aiohttp
 from discord.ext import commands, tasks
-from utils.logger import get_logger
+from storage.logging import get_logger
 
 logger = get_logger("PremiumManager")
 

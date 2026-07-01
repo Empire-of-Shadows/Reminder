@@ -1,3 +1,9 @@
+# ───────────────────────────────────────────────────────────────────────────
+# VENDORED from admin_engine/ — DO NOT EDIT HERE.
+# Edit the master at <repo-root>/admin_engine/ and run:
+#     python tools/sync_admin_engine.py
+# Drift is enforced by:  python tools/sync_admin_engine.py --check
+# ───────────────────────────────────────────────────────────────────────────
 """
 Admin Panel Engine -Generic config-driven panel builder.
 
@@ -18,6 +24,7 @@ from .base import (
     create_empty_layout,
     readonly_container,
     editable_container,
+    notice_container,
 )
 
 
@@ -30,6 +37,7 @@ class PanelNode:
         label:        Display label for headers and dropdown options.
         kind:         Node type: "menu" | "role_select" | "channel_select" | "option_select"
                       | "modal_input" | "dual_modal_input" | "file_upload" | "dict_editor"
+                      | "paginated_list" | "grouped_paginated_select" | "action"
         description:  Short description shown in the parent dropdown and as
                       instruction text on the select view.
 
@@ -52,7 +60,7 @@ class PanelNode:
 
     key: str
     label: str
-    kind: str  # "menu" | "role_select" | "channel_select" | "option_select" | "modal_input" | "dual_modal_input" | "file_upload" | "dict_editor"
+    kind: str  # "menu" | "role_select" | "channel_select" | "option_select" | "modal_input" | "dual_modal_input" | "file_upload" | "dict_editor" | "paginated_list" | "grouped_paginated_select" | "action"
     description: str = ""
 
     # menu nodes only
@@ -72,6 +80,11 @@ class PanelNode:
     clear_values: Optional[Callable] = None  # async (guild_id) -> bool
     pre_check: Optional[Callable] = None       # async (interaction, guild_id) -> LayoutView|None
     post_save_hook: Optional[Callable] = None  # async (interaction, guild_id, saved_values) -> None
+    # role/channel/option_select only — optional async (guild, values) -> error_str | None,
+    # run on save (after permission checks, before set_values). Return an error string to
+    # reject the selection with a notice; None to allow. For validating a selection against
+    # live guild state (e.g. "this channel must sit inside the configured category").
+    value_validator: Optional[Callable] = None
 
     # channel_select only
     channel_types: Optional[list] = None   # list[discord.ChannelType] to filter
@@ -138,6 +151,76 @@ class PanelNode:
     # premium_label is set, renderers display it instead of `label`.
     premium_label: Optional[str] = None
 
+    # file_upload only — optional sync (parsed) -> (ok, error_msg) validator run
+    # against an uploaded payload before it is persisted.
+    schema_validator: Optional[Callable] = None
+
+    # paginated_list only — a generic, scrollable list of items with an optional
+    # per-item action. The engine paginates: each page shows up to
+    # ``list_page_size`` items, so the per-item action Select never exceeds
+    # Discord's 25-option cap regardless of total list length.
+    list_get_items: Optional[Callable] = None          # async (guild_id) -> list[Any]; full list
+    list_format_line: Optional[Callable] = None        # sync (item, abs_index) -> str; display line
+    list_item_value: Optional[Callable] = None         # sync (item) -> str; stable id for the action select
+    list_item_option_label: Optional[Callable] = None  # sync (item, abs_index) -> str; <=100-char select label
+    list_page_size: int = 10                           # items per page (must be <= 25)
+    list_action_label: Optional[str] = None            # e.g. "Delete"; None => browse-only
+    list_action: Optional[Callable] = None             # async (guild_id, value) -> bool; act on chosen item
+    list_action_confirm_line: Optional[Callable] = None  # sync (item) -> str; confirm-step text
+    list_count: Optional[Callable] = None              # async (guild_id) -> int; efficient summary count
+
+    # grouped_paginated_select only — a single-value leaf chosen via a two-step
+    # picker: pick a group, then pick an item within it (the item step reuses the
+    # list_* formatter fields above + build_paginated_list_view). get_values /
+    # set_values keep the normal single-value leaf contract.
+    group_get_groups: Optional[Callable] = None        # sync () -> list[(group_value, group_label)]
+    group_get_items: Optional[Callable] = None         # sync (group_value) -> list[item]
+
+    # action only — a leaf that runs an arbitrary handler (no value contract).
+    on_run: Optional[Callable] = None                  # async (interaction, ctx) -> None
+    summary_builder: Optional[Callable] = None         # sync (node, ...) -> str; overview summary
+    # Tri-state mod access: True/False are explicit; None inherits from the nearest
+    # ancestor (root default: admin-only). A menu's True cascades to its children; a
+    # child's False overrides. Resolved by auth.effective_mod_allowed.
+    mod_allowed: Optional[bool] = None
+
+    # Dashboard summary overrides (consumed by some overview renderers).
+    view_only: bool = False
+    default_summary: str = ""
+    is_customized: Optional[Callable] = None
+
+    # Per-node view timeout override (seconds).
+    timeout_override: Optional[float] = None
+
+    # Async description override: async (guild) -> str, resolved at render time.
+    async_description: Optional[Callable] = None
+
+
+@dataclass
+class ActionContext:
+    """Context handed to an ``action``-kind node's handler.
+
+    The engine dispatches ``kind="action"`` nodes to ``node.on_run(cog, interaction,
+    guild, ctx)``. ``ctx`` carries everything a bot-specific handler needs to render
+    into the shared Message-2 surface and chain back-navigation, without the engine
+    knowing the handler's internals:
+
+        session:          the active PanelSession (synced timeout / msg2 tracking)
+        parent_node:      the menu this action was opened from (for Back), or None
+        grandparent_node: the parent's parent (for multi-level Back chains)
+        edit:             True to replace the current msg2; False to open a fresh one
+        refresh_parent:   async () -> None; refresh the overview (msg1) after a change
+        is_premium:       whether the guild has premium (already resolved)
+        back_label:       "Back" / "Close" per the §1 navigation table
+    """
+    session: Optional[object] = None
+    parent_node: Optional["PanelNode"] = None
+    grandparent_node: Optional["PanelNode"] = None
+    edit: bool = False
+    refresh_parent: Optional[Callable] = None
+    is_premium: bool = False
+    back_label: str = "Back"
+
 
 # -- Helpers -------------------------------------------------------------------
 
@@ -176,7 +259,15 @@ def _child_summary(node: PanelNode, values: list, guild: discord.Guild | None = 
     kind = node.kind
     n = len(values)
     if kind == "role_select":
-        return f"{n} role(s) assigned" if n else "Not assigned"
+        if not n:
+            return "Not assigned"
+        if guild is None:
+            return f"{n} role(s) assigned"
+        names = []
+        for rid in values:
+            role = guild.get_role(int(rid))
+            names.append(f"@{role.name}" if role is not None else f"Unknown ({rid})")
+        return ", ".join(names)
     if kind == "channel_select":
         is_category_only = (
             node.channel_types is not None
@@ -221,6 +312,12 @@ def _child_summary(node: PanelNode, values: list, guild: discord.Guild | None = 
                 return "Default settings"
             return f"{n} setting(s) customized"
         return "Not configured"
+    if kind == "paginated_list":
+        return f"{n} item(s)" if n else "Empty"
+    if kind == "grouped_paginated_select":
+        return str(values[0]) if values else "Not set"
+    if kind == "action":
+        return ""
     return f"{n} configured" if n else "Not set"
 
 
@@ -780,11 +877,11 @@ def build_overview_view(
     header_text = title_override if title_override is not None else root_node.label
     builder.add_header(f"## {header_text}")
 
-    # Read-only setup guide (preamble_items) — only shown when toggled on
+    # Read-only setup guide (preamble_items) \u2014 only shown when toggled on
     if preamble_items:
         builder.add_item(readonly_container(*preamble_items))
 
-    # Read-only config details — current state summary
+    # Read-only config details \u2014 current state summary
     detail_items: list[discord.ui.Item] = []
     if compact:
         lines = []
@@ -824,9 +921,9 @@ def build_overview_view(
                     for sub_key, sub_node in child_node.children.items():
                         sub_val = val.get(sub_key, "Not configured")
                         sub_label = _effective_label(sub_node, is_premium)
-                        lines.append(f"    • {sub_label}: {sub_val}")
+                        lines.append(f"    \u2022 {sub_label}: {sub_val}")
                 else:
-                    lines.append(f"  • {child_label_2}: {val}")
+                    lines.append(f"  \u2022 {child_label_2}: {val}")
 
             detail_items.append(discord.ui.TextDisplay("\n".join(lines)))
 
@@ -1208,6 +1305,223 @@ def build_file_upload_view(
     builder.add_item(editable_container(
         discord.ui.TextDisplay(current_text),
         btn_row,
+    ))
+
+    back_style = discord.ButtonStyle.danger if back_label == "Close" else discord.ButtonStyle.secondary
+    back_btn = discord.ui.Button(
+        label=back_label,
+        style=back_style,
+        custom_id=cid("editor", "back", node.key),
+    )
+    back_btn.callback = on_back
+    back_row = discord.ui.ActionRow()
+    back_row.add_item(back_btn)
+    builder.add_item(back_row)
+
+    return builder.build()
+
+
+# -- Paginated list -----------------------------------------------------------
+
+def build_paginated_list_view(
+    node: PanelNode,
+    page_items: list,
+    page: int,
+    total: int,
+    guild: discord.Guild,
+    on_prev: Callable[[discord.Interaction], Awaitable[None]],
+    on_next: Callable[[discord.Interaction], Awaitable[None]],
+    on_pick: Callable[[discord.Interaction, str], Awaitable[None]],
+    on_back: Callable[[discord.Interaction], Awaitable[None]],
+    back_label: str = "Back",
+    is_premium: bool = False,
+) -> discord.ui.LayoutView:
+    """Build a paginated list view for a PanelNode with kind="paginated_list".
+
+    ``page_items`` is the already-sliced window for the current ``page`` (0-based);
+    ``total`` is the full item count. When ``node.list_action_label`` is set and the
+    page is non-empty, a per-item Select (bounded to the page, so never > 25 options)
+    dispatches the chosen item's value to ``on_pick``.
+    """
+    builder = AdminLayoutBuilder()
+
+    node_label = _effective_label(node, is_premium)
+    builder.add_header(f"## {node_label}")
+
+    if node.description:
+        builder.add_item(readonly_container(discord.ui.TextDisplay(node.description)))
+
+    page_size = max(1, node.list_page_size)
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    start = page * page_size
+
+    if total == 0:
+        body_text = "*The list is empty.*"
+    else:
+        lines = [
+            node.list_format_line(item, start + offset)
+            for offset, item in enumerate(page_items)
+        ]
+        end = start + len(page_items)
+        lines.append(f"\n*Showing {start + 1}–{end} of {total}* (page {page + 1}/{total_pages})")
+        body_text = "\n".join(lines)
+
+    editable_items: list[discord.ui.Item] = [discord.ui.TextDisplay(body_text)]
+
+    # Per-item action select (bounded to the current page -> never exceeds 25).
+    if node.list_action_label and page_items:
+        options = [
+            discord.SelectOption(
+                label=node.list_item_option_label(item, start + offset)[:100],
+                value=str(node.list_item_value(item)),
+            )
+            for offset, item in enumerate(page_items)
+        ]
+        action_select = discord.ui.Select(
+            placeholder=f"{node.list_action_label}…",
+            custom_id=cid("editor", "list_action", node.key),
+            options=options,
+            min_values=1,
+            max_values=1,
+        )
+
+        async def _action_cb(interaction: discord.Interaction):
+            await on_pick(interaction, interaction.data["values"][0])
+
+        action_select.callback = _action_cb
+        action_row = discord.ui.ActionRow()
+        action_row.add_item(action_select)
+        editable_items.append(action_row)
+
+    builder.add_item(editable_container(*editable_items))
+
+    # Navigation + back row.
+    nav_row = discord.ui.ActionRow()
+
+    prev_btn = discord.ui.Button(
+        label="◀ Prev",
+        style=discord.ButtonStyle.secondary,
+        custom_id=cid("editor", "list_prev", node.key),
+        disabled=(page <= 0),
+    )
+    prev_btn.callback = on_prev
+    nav_row.add_item(prev_btn)
+
+    next_btn = discord.ui.Button(
+        label="Next ▶",
+        style=discord.ButtonStyle.secondary,
+        custom_id=cid("editor", "list_next", node.key),
+        disabled=(page >= total_pages - 1),
+    )
+    next_btn.callback = on_next
+    nav_row.add_item(next_btn)
+
+    back_style = discord.ButtonStyle.danger if back_label == "Close" else discord.ButtonStyle.secondary
+    back_btn = discord.ui.Button(
+        label=back_label,
+        style=back_style,
+        custom_id=cid("editor", "back", node.key),
+    )
+    back_btn.callback = on_back
+    nav_row.add_item(back_btn)
+
+    builder.add_item(nav_row)
+
+    return builder.build()
+
+
+def build_confirm_view(
+    title: str,
+    body: str,
+    on_confirm: Callable[[discord.Interaction], Awaitable[None]],
+    on_cancel: Callable[[discord.Interaction], Awaitable[None]],
+    *,
+    confirm_label: str = "Confirm",
+    cancel_label: str = "Cancel",
+    confirm_style: discord.ButtonStyle = discord.ButtonStyle.danger,
+    key: str = "confirm",
+) -> discord.ui.LayoutView:
+    """Build a generic Confirm/Cancel prompt (orange notice accent).
+
+    Used by destructive panel flows (e.g. paginated_list item actions) to require
+    an explicit confirmation before acting.
+    """
+    builder = AdminLayoutBuilder()
+    builder.add_header(f"## {title}")
+    builder.add_item(notice_container(discord.ui.TextDisplay(body)))
+
+    confirm_btn = discord.ui.Button(
+        label=confirm_label,
+        style=confirm_style,
+        custom_id=cid("confirm", "save", key),
+    )
+    confirm_btn.callback = on_confirm
+    cancel_btn = discord.ui.Button(
+        label=cancel_label,
+        style=discord.ButtonStyle.secondary,
+        custom_id=cid("confirm", "cancel", key),
+    )
+    cancel_btn.callback = on_cancel
+    row = discord.ui.ActionRow()
+    row.add_item(confirm_btn)
+    row.add_item(cancel_btn)
+    builder.add_item(row)
+
+    return builder.build()
+
+
+# -- Grouped paginated select -------------------------------------------------
+
+def build_grouped_region_view(
+    node: PanelNode,
+    regions: list[tuple[str, str]],
+    current_label: str,
+    on_pick_region: Callable[[discord.Interaction, str], Awaitable[None]],
+    on_back: Callable[[discord.Interaction], Awaitable[None]],
+    back_label: str = "Back",
+    is_premium: bool = False,
+) -> discord.ui.LayoutView:
+    """Build the group-picker step for a PanelNode with kind="grouped_paginated_select".
+
+    ``regions`` is a list of ``(value, label)``; picking one dispatches the value
+    to ``on_pick_region`` (which then renders the paginated item step via
+    ``build_paginated_list_view``). ``current_label`` is a human string for the
+    currently-saved value (shown for context), or "" when nothing is set.
+    """
+    builder = AdminLayoutBuilder()
+
+    node_label = _effective_label(node, is_premium)
+    builder.add_header(f"## {node_label}")
+
+    desc_text = node.description or f"Select a value for **{node_label}**."
+    builder.add_item(readonly_container(discord.ui.TextDisplay(desc_text)))
+
+    current_text = (
+        f"**Current:** {current_label}" if current_label
+        else "*Nothing currently set.*"
+    )
+
+    options = [
+        discord.SelectOption(label=label[:100], value=value)
+        for value, label in regions[:25]
+    ]
+    component = discord.ui.Select(
+        placeholder="Select a region...",
+        custom_id=cid("editor", "group_select", node.key),
+        min_values=1,
+        max_values=1,
+        options=options,
+    )
+
+    async def _region_cb(interaction: discord.Interaction):
+        await on_pick_region(interaction, interaction.data["values"][0])
+
+    component.callback = _region_cb
+    select_row = discord.ui.ActionRow()
+    select_row.add_item(component)
+    builder.add_item(editable_container(
+        discord.ui.TextDisplay(current_text),
+        select_row,
     ))
 
     back_style = discord.ButtonStyle.danger if back_label == "Close" else discord.ButtonStyle.secondary

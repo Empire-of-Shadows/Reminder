@@ -199,8 +199,8 @@ if $BUILD_CMD; then
         echo "==== Deployment Successful! ===="
         echo "Timestamp: $(date)"
         echo ""
-        echo "  Bot:       $BOT_CONTAINER (port 50006)"
-        echo "  Dashboard: $DASH_CONTAINER (port 54006)"
+        echo "  Bot:       $BOT_CONTAINER (port 50014)"
+        echo "  Dashboard: $DASH_CONTAINER (port 54014)"
 
         # Clean up backup images
         docker rmi -f "$BACKUP_TAG_BOT" 2>/dev/null || true

@@ -1,43 +1,91 @@
-import os
-import logging
-import asyncio
-from typing import Dict, List, Any, Callable
-from datetime import datetime, timedelta
+# ───────────────────────────────────────────────────────────────────────────
+# VENDORED from storage_engine/ — DO NOT EDIT HERE.
+# Edit the master at <repo-root>/EmpireSystems/storage_engine/ and run:
+#     python tools/sync_storage_engine.py
+# Drift is enforced by:  python tools/sync_storage_engine.py --check
+# ───────────────────────────────────────────────────────────────────────────
+"""DatabaseManagerBase — the generic, bot-agnostic Mongo manager.
 
-import pytz
-from pymongo import AsyncMongoClient
+This is the engine half of the database manager. It owns connection pooling, database
+discovery, collection-manager construction, index creation, transactions, the shared
+cache + change-stream coherency, health checks, and graceful shutdown.
+
+It is ABSTRACT in practice: it does not know any bot's collections. Each bot supplies
+that via two mixins it composes into a concrete ``DatabaseManager`` (exactly how
+``admin_cog`` imports ``MAIN_PANEL`` from the bot):
+
+    # bot-owned, NOT vendored — see define_collections_reference.py / database_properties_reference.py
+    class DatabaseManager(DatabaseManagerBase, DefineCollections, DatabaseProperties):
+        pass
+
+    db_manager = DatabaseManager(watched_collections=WATCHED_COLLECTIONS)
+
+``DefineCollections`` must provide ``_define_collection_configs(self)`` (populates
+``self._collection_configs``); ``DatabaseProperties`` provides typed accessors. The base
+intentionally does NOT define ``_define_collection_configs`` so the mixin's version wins
+via MRO regardless of base ordering.
+"""
+
+import os
+import asyncio
+from typing import Dict, List, Any, Callable, Optional
+from datetime import datetime, timedelta, timezone
+
+from pymongo import AsyncMongoClient, UpdateOne
 from pymongo.asynchronous.database import AsyncDatabase
 from pymongo.asynchronous.collection import AsyncCollection
-from pymongo import UpdateOne
+from dotenv import load_dotenv
 
-from utils.env import load_project_env
-from storage.core.collection_config import CollectionConfig
-from storage.core.collection_manager import CollectionManager
-from storage.core.connection_pool import ConnectionPool
-from storage.database_properties import DatabaseProperties
-from storage.define_collections import DefineCollections
+from .core.collection_config import CollectionConfig
+from .core.collection_manager import CollectionManager
+from .core.connection_pool import ConnectionPool
+from .cache.backend import CacheBackend
+from .cache.local import LocalCache
+from .cache.coherency import ChangeStreamWatcher
+from .buffer.batch_writer import BatchWriter
+from .logging_compat import get_logger
 
-# Load environment variables from docker/.env
-load_project_env()
-primary = os.getenv("MONGO_URI")
-logger = logging.getLogger("DatabaseManager")
+load_dotenv()
+logger = get_logger("DatabaseManager")
 
 
-class DatabaseManager(DefineCollections, DatabaseProperties):
+class DatabaseManagerBase:
+    """MongoDB manager with pooling, CRUD, shared cache, coherency, and health checks.
+
+    Subclass with the bot's ``DefineCollections`` + ``DatabaseProperties`` mixins.
     """
-    Comprehensive MongoDB database manager with connection pooling,
-    CRUD operations, caching, error handling, and performance optimization.
-    """
 
-    def __init__(self, primary_uri: str = None, **additional_uris):
-        self.primary_uri = primary_uri or primary
+    def __init__(self, primary_uri: str = None, secondary_uri: str = None, *,
+                 cache: Optional[CacheBackend] = None,
+                 cache_defaults: Optional[Dict[str, Any]] = None,
+                 watched_collections: Optional[List[str]] = None,
+                 **additional_uris):
+        self.primary_uri = primary_uri or os.getenv("MONGO_URI")
+        self.secondary_uri = secondary_uri
+        self.additional_uris = additional_uris
 
         if not self.primary_uri:
-            raise ValueError("Primary MongoDB URI not provided")
+            raise ValueError("Primary MongoDB URI not provided (set MONGO_URI env var)")
 
-        # Create connection pools for each URI
-        self.connection_pools = {}
+        self.connection_pools: Dict[str, ConnectionPool] = {}
         self.connection_pools['primary'] = ConnectionPool(self.primary_uri, connection_name='primary')
+
+        if self.secondary_uri:
+            self.connection_pools['secondary'] = ConnectionPool(self.secondary_uri, connection_name='secondary')
+            logger.info("Secondary connection pool configured")
+
+        for name, uri in self.additional_uris.items():
+            if uri and name.endswith('_uri'):
+                conn_name = name.removesuffix('_uri')
+                self.connection_pools[conn_name] = ConnectionPool(uri, connection_name=conn_name)
+                logger.info(f"{conn_name.capitalize()} connection pool configured")
+
+        # One cache shared by every CollectionManager so the change-stream watcher can
+        # invalidate across collections through a single backend.
+        self._cache: CacheBackend = cache or LocalCache(**(cache_defaults or {}))
+        self._watched_keys: List[str] = list(watched_collections or [])
+        self._watcher: Optional[ChangeStreamWatcher] = None
+        self._batch_writer: Optional[BatchWriter] = None
 
         self.databases: Dict[str, AsyncDatabase] = {}
         self.collections: Dict[str, CollectionManager] = {}
@@ -45,8 +93,34 @@ class DatabaseManager(DefineCollections, DatabaseProperties):
         self._initialized = False
         self._lock = asyncio.Lock()
 
-        # Define collection configurations with indexes
-        self._define_collection_configs()
+        # The bot's DefineCollections mixin provides _define_collection_configs (populates
+        # self._collection_configs). The base deliberately does NOT define it, so the
+        # mixin's version always wins via MRO regardless of base ordering; we resolve it by
+        # name and raise a clear error if no mixin was composed in.
+        define = getattr(self, "_define_collection_configs", None)
+        if define is None:
+            raise NotImplementedError(
+                "Compose a DefineCollections mixin that implements "
+                "_define_collection_configs(). See define_collections_reference.py."
+            )
+        define()
+
+    @property
+    def cache(self) -> CacheBackend:
+        """The shared cache backend (hit-first on reads)."""
+        return self._cache
+
+    @property
+    def batch_writer(self) -> BatchWriter:
+        """Shared write buffer for high-frequency counters (lazily started).
+
+        Coalesces ``$inc``/``$set`` writes to the same document and flushes them through
+        the collection managers on a size/interval trigger. Auto-flushed on ``close()``.
+        Use only for deferrable, non-critical writes (see the buffer module docs)."""
+        if self._batch_writer is None:
+            self._batch_writer = BatchWriter(self.get_collection_manager)
+            self._batch_writer.start()
+        return self._batch_writer
 
     @property
     def is_connected(self) -> bool:
@@ -65,29 +139,23 @@ class DatabaseManager(DefineCollections, DatabaseProperties):
             try:
                 logger.info("Initializing DatabaseManager...")
 
-                # Initialize all connection pools
                 for name, pool in self.connection_pools.items():
                     await pool.initialize()
                     logger.info(f"Initialized {name} connection pool")
 
-                # Dynamically discover and initialize databases from all connections
+                # Discover databases from all connections
                 for connection_name, pool in self.connection_pools.items():
                     try:
                         client = await pool.get_client()
-
-                        # Get list of database names (excluding system databases)
                         db_names = await client.list_database_names()
                         non_system_dbs = [db for db in db_names if db not in ['admin', 'local', 'config']]
 
                         logger.info(
                             f"Found {len(non_system_dbs)} databases in {connection_name} connection: {non_system_dbs}")
 
-                        # Initialize databases for this connection
                         for db_name in non_system_dbs:
-                            # Use connection name as prefix if it's not primary to avoid conflicts
                             db_key = db_name
                             if connection_name != 'primary' and db_name in self.databases:
-                                # If database name conflicts with primary, use connection prefix
                                 db_key = f"{connection_name}_{db_name}"
                                 logger.debug(
                                     f"Database name conflict: {db_name} exists in multiple connections. Using {db_key}")
@@ -99,11 +167,9 @@ class DatabaseManager(DefineCollections, DatabaseProperties):
                         logger.warning(f"Error discovering databases from {connection_name} connection: {e}")
                         continue
 
-                # Initialize collections with managers
                 await self._initialize_collections()
-
-                # Create indexes
                 await self._create_all_indexes()
+                await self._start_coherency()
 
                 self._initialized = True
                 logger.info(f"DatabaseManager initialized successfully with {len(self.databases)} databases")
@@ -113,10 +179,9 @@ class DatabaseManager(DefineCollections, DatabaseProperties):
                 raise
 
     async def _initialize_collections(self):
-        """Initialize collection managers."""
+        """Initialize collection managers (all sharing the one cache backend)."""
         for config_key, config in self._collection_configs.items():
             try:
-                # Get the appropriate client based on the config's connection
                 connection_name = config.connection
                 if connection_name not in self.connection_pools:
                     logger.warning(
@@ -127,7 +192,6 @@ class DatabaseManager(DefineCollections, DatabaseProperties):
                 database = client[config.database]
                 collection = database[config.name]
 
-                # Create capped collection if specified
                 if config.capped:
                     try:
                         await database.create_collection(
@@ -137,10 +201,9 @@ class DatabaseManager(DefineCollections, DatabaseProperties):
                             max=config.max_documents
                         )
                     except Exception:
-                        # Collection might already exist
-                        pass
+                        pass  # Collection may already exist or capped creation unsupported
 
-                manager = CollectionManager(collection, config)
+                manager = CollectionManager(collection, config, cache=self._cache)
                 self.collections[config_key] = manager
 
                 logger.debug(f"Initialized collection manager for {config_key} on {connection_name} connection")
@@ -157,6 +220,25 @@ class DatabaseManager(DefineCollections, DatabaseProperties):
             except Exception as e:
                 logger.warning(f"Error creating indexes for {config_key}: {e}")
 
+    async def _start_coherency(self):
+        """Attach change-stream coherency to the configured watched collections.
+
+        Degrades to TTL-only automatically when change streams are unavailable
+        (e.g. standalone mongod). Never fatal."""
+        if not self._watched_keys:
+            return
+        watch_map: Dict[str, AsyncCollection] = {}
+        for key in self._watched_keys:
+            mgr = self.collections.get(key)
+            if mgr is None:
+                logger.warning(f"watched_collections references unknown collection key {key!r}; skipping.")
+                continue
+            watch_map[mgr.name] = mgr.collection
+        if not watch_map:
+            return
+        self._watcher = ChangeStreamWatcher(lambda n: watch_map[n], self._cache, list(watch_map))
+        await self._watcher.start()
+
     def _ensure_initialized(self):
         """Ensure the database manager is initialized."""
         if not self._initialized:
@@ -165,156 +247,100 @@ class DatabaseManager(DefineCollections, DatabaseProperties):
     # Collection Access Methods
 
     def get_database(self, name: str) -> AsyncDatabase:
-        """
-        Get a database by name.
-
-        Args:
-            name: Database name
-
-        Returns:
-            Database instance
-        """
+        """Get a database by name."""
         self._ensure_initialized()
-        if name in self.databases:
-            return self.databases[name]
-        # Not discovered at init (the DB has no data yet, so it isn't enumerated
-        # by list_database_names). Bind a lazy handle from the primary connection;
-        # MongoDB creates the database on first write. This mirrors how predefined
-        # collection configs (e.g. database='ImperialReminder') are bound.
-        primary = self.connection_pools.get('primary')
-        if primary is None:
-            raise ValueError(f"Database '{name}' not found and no primary connection available")
-        self.databases[name] = primary.client[name]
+        if name not in self.databases:
+            for connection_name, pool in self.connection_pools.items():
+                try:
+                    client = pool.client
+                    if client is not None:
+                        self.databases[name] = client[name]
+                        return self.databases[name]
+                except Exception:
+                    continue
+            raise ValueError(f"Database '{name}' not found in any connection")
         return self.databases[name]
 
     def get_collection_manager(self, collection_key: str) -> CollectionManager:
-        """
-        Get a collection manager by key.
-
-        Args:
-            collection_key: Collection configuration key
-
-        Returns:
-            CollectionManager instance
-        """
+        """Get a collection manager by key."""
         self._ensure_initialized()
         if collection_key not in self.collections:
             raise ValueError(f"Collection '{collection_key}' not configured")
         return self.collections[collection_key]
 
     def get_raw_collection(self, database_name: str, collection_name: str) -> AsyncCollection:
-        """
-        Get raw collection access for advanced operations.
-
-        Args:
-            database_name: Database name
-            collection_name: Collection name
-
-        Returns:
-            Raw collection instance
-        """
+        """Get raw collection access for advanced operations."""
         database = self.get_database(database_name)
         return database[collection_name]
 
     def get_client(self, connection_name: str = 'primary') -> AsyncMongoClient:
-        """
-        Get a client for a specific connection.
-
-        Args:
-            connection_name: Name of the connection pool ('primary', 'secondary', 'third', etc.)
-
-        Returns:
-            AsyncMongoClient instance
-        """
+        """Get a client for a specific connection."""
         self._ensure_initialized()
         if connection_name not in self.connection_pools:
             raise ValueError(f"Connection '{connection_name}' not configured")
         return self.connection_pools[connection_name].client
 
     async def get_client_async(self, connection_name: str = 'primary') -> AsyncMongoClient:
-        """
-        Get a client for a specific connection asynchronously.
-
-        Args:
-            connection_name: Name of the connection pool ('primary', 'secondary', 'third', etc.)
-
-        Returns:
-            AsyncMongoClient instance
-        """
+        """Get a client for a specific connection asynchronously."""
         self._ensure_initialized()
         if connection_name not in self.connection_pools:
             raise ValueError(f"Connection '{connection_name}' not configured")
         return await self.connection_pools[connection_name].get_client()
 
+    # Transaction Support
+
+    async def start_session(self, connection_name: str = 'primary', **kwargs):
+        """Start a new database session for transactions."""
+        self._ensure_initialized()
+        client = await self.get_client_async(connection_name)
+        return await client.start_session(**kwargs)
+
+    async def with_transaction(self, callback: Callable, session_options: Dict = None,
+                               connection_name: str = 'primary'):
+        """Execute a callback within a transaction."""
+        session_options = session_options or {}
+
+        async with await self.start_session(connection_name, **session_options) as session:
+            async with session.start_transaction():
+                return await callback(session)
+
     # Utility Methods
 
-    async def get_database_stats(self) -> Dict[str, Any]:
-        """Get comprehensive database statistics."""
-        self._ensure_initialized()
+    async def cleanup_old_data(self, collection_keys: List[str], days_to_keep: int = 90,
+                               status: Optional[str] = None) -> Dict[str, Any]:
+        """Delete documents older than ``days_to_keep`` (by ``created_at``) across the
+        given collection keys. Optionally restrict to a ``status`` value. Generic: the
+        caller chooses which collections to sweep (no hard-coded names)."""
+        cutoff_date = datetime.now(tz=timezone.utc) - timedelta(days=days_to_keep)
+        cleanup_results: Dict[str, Any] = {}
 
-        stats = {
-            'databases': {},
-            'total_collections': 0,
-            'total_documents': 0,
-            'total_size': 0,
-            'connections': {}
-        }
-
-        try:
-            # Get stats for each connection
-            for connection_name, pool in self.connection_pools.items():
+        for collection_key in collection_keys:
+            if collection_key in self.collections:
                 try:
-                    client = await pool.get_client()
-                    connection_stats = await client.admin.command('serverStatus')
-                    stats['connections'][connection_name] = {
-                        'ok': connection_stats.get('ok', 0),
-                        'host': connection_stats.get('host', 'unknown'),
-                        'version': connection_stats.get('version', 'unknown')
-                    }
+                    manager = self.collections[collection_key]
+                    query: Dict[str, Any] = {'created_at': {'$lt': cutoff_date}}
+                    if status is not None:
+                        query['status'] = status
+                    deleted_count = await manager.delete_many(query)
+                    cleanup_results[collection_key] = deleted_count
+                    logger.info(f"Cleaned up {deleted_count} old records from {collection_key}")
                 except Exception as e:
-                    stats['connections'][connection_name] = f"error: {e}"
+                    logger.error(f"Error cleaning up {collection_key}: {e}")
+                    cleanup_results[collection_key] = f"Error: {e}"
 
-            # Get database stats (using primary connection for existing logic)
-            client = await self.connection_pools['primary'].get_client()
-
-            for db_name, database in self.databases.items():
-                db_stats = await database.command('dbStats')
-                collection_stats = {}
-
-                for collection_key, manager in self.collections.items():
-                    if manager.config.database == db_name:
-                        coll_stats = await manager.get_stats()
-                        collection_stats[manager.name] = coll_stats
-                        stats['total_documents'] += coll_stats.get('count', 0)
-                        stats['total_size'] += coll_stats.get('size', 0)
-
-                stats['databases'][db_name] = {
-                    'collections': db_stats.get('collections', 0),
-                    'dataSize': db_stats.get('dataSize', 0),
-                    'indexSize': db_stats.get('indexSize', 0),
-                    'collection_details': collection_stats
-                }
-
-                stats['total_collections'] += db_stats.get('collections', 0)
-
-            return stats
-
-        except Exception as e:
-            logger.error(f"Error getting database stats: {e}")
-            return stats
+        return cleanup_results
 
     async def health_check(self) -> Dict[str, Any]:
         """Perform comprehensive health check on all connections."""
         health_status = {
             'status': 'healthy',
-            'timestamp': datetime.now(tz=pytz.UTC).isoformat(),
+            'timestamp': datetime.now(tz=timezone.utc).isoformat(),
             'connections': {},
-            'databases': {},
-            'collections': {}
+            'collections': {},
+            'cache': self._cache.get_stats(),
         }
 
         try:
-            # Check all connection pools
             for name, pool in self.connection_pools.items():
                 try:
                     client = await pool.get_client()
@@ -324,17 +350,6 @@ class DatabaseManager(DefineCollections, DatabaseProperties):
                     health_status['connections'][name] = f'error: {e}'
                     health_status['status'] = 'degraded'
 
-            # Check each database (using primary connection for existing databases)
-            for db_name in self.databases.keys():
-                try:
-                    db = self.get_database(db_name)
-                    await db.command('ping')
-                    health_status['databases'][db_name] = 'healthy'
-                except Exception as e:
-                    health_status['databases'][db_name] = f'error: {e}'
-                    health_status['status'] = 'degraded'
-
-            # Check collection managers
             for collection_key, manager in self.collections.items():
                 try:
                     await manager.count_documents({})
@@ -354,11 +369,20 @@ class DatabaseManager(DefineCollections, DatabaseProperties):
         try:
             logger.info("Closing DatabaseManager...")
 
-            # Clear collections and databases
+            # Flush buffered writes BEFORE tearing down collections/pools so no queued
+            # counter updates are lost on shutdown.
+            if self._batch_writer is not None:
+                await self._batch_writer.shutdown()
+                self._batch_writer = None
+
+            if self._watcher is not None:
+                await self._watcher.stop()
+                self._watcher = None
+
+            self._cache.clear()
             self.collections.clear()
             self.databases.clear()
 
-            # Close all connection pools
             for name, pool in self.connection_pools.items():
                 await pool.close()
                 logger.info(f"Closed {name} connection pool")
@@ -371,5 +395,78 @@ class DatabaseManager(DefineCollections, DatabaseProperties):
             logger.error(f"Error closing DatabaseManager: {e}")
 
 
-# Global database manager instance
-db_manager = DatabaseManager()
+# Utility functions
+
+async def ensure_unique_constraint(manager: CollectionManager,
+                                   field: str,
+                                   value: Any,
+                                   exclude_id: Any = None) -> bool:
+    """Ensure a field value is unique in the collection."""
+    filter_dict = {field: value}
+    if exclude_id:
+        filter_dict['_id'] = {'$ne': exclude_id}
+
+    existing = await manager.find_one(filter_dict)
+    return existing is None
+
+
+async def paginate_results(manager: CollectionManager,
+                           filter_dict: Dict[str, Any] = None,
+                           sort: List[tuple] = None,
+                           page_size: int = 50,
+                           page: int = 1) -> Dict[str, Any]:
+    """Paginate query results."""
+    filter_dict = filter_dict or {}
+    skip = (page - 1) * page_size
+
+    total_count, results = await asyncio.gather(
+        manager.count_documents(filter_dict),
+        manager.find_many(filter_dict, sort=sort, limit=page_size, skip=skip)
+    )
+
+    total_pages = (total_count + page_size - 1) // page_size
+
+    return {
+        'results': results,
+        'pagination': {
+            'current_page': page,
+            'page_size': page_size,
+            'total_items': total_count,
+            'total_pages': total_pages,
+            'has_next': page < total_pages,
+            'has_prev': page > 1
+        }
+    }
+
+
+async def batch_upsert(manager: CollectionManager,
+                       documents: List[Dict[str, Any]],
+                       match_fields: List[str]) -> Dict[str, int]:
+    """Perform batch upsert operations based on matching fields."""
+    if not documents or not match_fields:
+        return {'inserted': 0, 'updated': 0}
+
+    operations = []
+    now = datetime.now(tz=timezone.utc)
+
+    for doc in documents:
+        filter_dict = {field: doc[field] for field in match_fields if field in doc}
+
+        update_doc = doc.copy()
+        update_doc['updated_at'] = now
+        if 'created_at' not in update_doc:
+            update_doc['created_at'] = now
+
+        operation = UpdateOne(
+            filter_dict,
+            {'$set': update_doc},
+            upsert=True
+        )
+        operations.append(operation)
+
+    result = await manager.bulk_write(operations, ordered=False)
+
+    return {
+        'inserted': result['inserted_count'] + result.get('upserted_count', 0),
+        'updated': result['modified_count']
+    }

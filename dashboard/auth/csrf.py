@@ -16,7 +16,7 @@ from fastapi import HTTPException, Request
 from dashboard import db
 from dashboard.auth.signing import unsign_token
 from dashboard.config import SESSION_COOKIE_NAME
-from utils.logger import get_logger
+from storage.logging import get_logger
 
 logger = get_logger("dashboard.auth.csrf")
 

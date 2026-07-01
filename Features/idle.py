@@ -2,7 +2,7 @@ import discord
 from discord.ext import commands, tasks
 import random
 
-from utils.logger import get_logger
+from storage.logging import get_logger
 
 logger = get_logger("Idle")
 

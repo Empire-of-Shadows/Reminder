@@ -5,7 +5,7 @@ Unified startup sequence (mirrors Ecom / TheHost / TheCodex):
     1. Load env from docker/.env (with root .env fallback)
     2. setup_application_logging  → "Application logging initialized for: discord-bot-reminder"
     3. main(): banner + Python/discord.py versions
-    4. _async_main(): install signal handlers → init DatabaseManager → start health endpoint (50006)
+    4. _async_main(): install signal handlers → init DatabaseManager → start health endpoint (50014)
     5. start_services(): bot.start raced against shutdown_event
     6. on_ready (idempotent via _init_done):
        Database Attachment → Cog Loading → Command Sync → Status Setup → Timer Reschedule
@@ -21,28 +21,29 @@ from pathlib import Path
 
 # Load env from docker/.env if it exists, otherwise use standard load_dotenv
 from dotenv import load_dotenv
-env_path = Path(__file__).parent / "docker" / ".env"
-if env_path.exists():
-    load_dotenv(env_path)
+_env_dir = Path(__file__).parent / "docker"
+if (_env_dir / ".env").exists():
+    load_dotenv(_env_dir / ".env")
 else:
     load_dotenv()
+# Dev override: docker/.env.local (gitignored) wins when present.
+load_dotenv(_env_dir / ".env.local", override=True)
 
 import discord
 
-from utils.bot import bot, TOKEN, s  # noqa: E402,F401
-from utils.logger import get_logger, setup_application_logging  # noqa: E402
-from utils.sync import load_cogs, attach_databases  # noqa: E402
-from utils.startup import (  # noqa: E402
-    log_all_commands,
+from startup.bot import bot, TOKEN, s  # noqa: E402,F401
+from storage.logging import get_logger, setup_application_logging  # noqa: E402
+from startup.sync import load_cogs, attach_databases, log_all_commands  # noqa: E402
+from startup.phases import (  # noqa: E402
     log_startup_summary,
     startup_phase,
 )
 from health_endpoint import initialize_health_server, stop_health_server  # noqa: E402
-from storage.database_manager import db_manager  # noqa: E402
+from storage.manager import db_manager  # noqa: E402
 
 # Initialize application-wide logging
 APPLICATION_NAME = "discord-bot-reminder"
-HEALTH_PORT = 50006
+HEALTH_PORT = 50014
 
 app_logger = setup_application_logging(
     app_name=APPLICATION_NAME,
@@ -243,6 +244,10 @@ def main():
     logger.info(f"=== Starting {APPLICATION_NAME} ===")
     logger.info(f"🐍 Python version: {sys.version}")
     logger.info(f"🤖 Discord.py version: {discord.__version__}")
+
+    if not TOKEN or not TOKEN.strip():
+        logger.error("❌ DISCORD_TOKEN is missing or empty. Set it before starting the bot.")
+        sys.exit(1)
 
     shutdown_event = asyncio.Event()
 

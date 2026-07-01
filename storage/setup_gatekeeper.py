@@ -2,7 +2,7 @@ import time
 from collections import OrderedDict
 from typing import Any, Optional
 import discord
-from utils.logger import get_logger
+from storage.logging import get_logger
 
 logger = get_logger("setup_gatekeeper")
 

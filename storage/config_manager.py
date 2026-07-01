@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set
 from collections import OrderedDict
 
-from utils.logger import get_logger
+from storage.logging import get_logger
 
 logger = get_logger("GuildConfig")
 

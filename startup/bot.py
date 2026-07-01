@@ -30,7 +30,7 @@ bot = commands.Bot(
 TIMEZONE_NAME = "America/Chicago"
 
 # Logging indent helper
-s = " " * 10
+s = " " * 5
 
 __all__ = [
     "bot", "TOKEN",

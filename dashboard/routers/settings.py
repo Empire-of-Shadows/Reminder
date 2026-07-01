@@ -2,10 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from dashboard.auth.dependencies import get_current_user
 from dashboard.auth.panel_role import resolve_panel_role, require_panel_access, MOD_ALLOWED_SECTIONS
 from dashboard.auth.csrf import verify_csrf
-from storage.database_manager import db_manager
+from storage.manager import db_manager
 from storage.config_manager import get_guild_config_manager, GuildConfig
 from storage.sub_systems.bump_config import SUPPORTED_BOTS
-from utils.logger import get_logger
+from storage.logging import get_logger
 
 logger = get_logger("dashboard.routers.settings")
 router = APIRouter(tags=["settings"])

@@ -2,7 +2,7 @@
 Health Endpoint Module for ImperialReminder Bot
 Provides HTTP endpoint for centralized health monitoring
 
-Port: 50006
+Port: 50014
 """
 
 import http.server
@@ -137,12 +137,12 @@ def stop_health_server():
         logger.info("Health check server stopped")
 
 
-def initialize_health_server(port=50006, bot=None, db_manager=None):
+def initialize_health_server(port=50014, bot=None, db_manager=None):
     """
     Initialize the health server in a background thread.
 
     Args:
-        port: Port to listen on (default: 50006)
+        port: Port to listen on (default: 50014)
         bot: Discord bot instance.
         db_manager: Database manager (optional). Read lazily; falls back to
             ``bot.db_manager`` when not passed.

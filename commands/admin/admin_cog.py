@@ -1,3 +1,9 @@
+# ───────────────────────────────────────────────────────────────────────────
+# VENDORED from admin_engine/ — DO NOT EDIT HERE.
+# Edit the master at <repo-root>/admin_engine/ and run:
+#     python tools/sync_admin_engine.py
+# Drift is enforced by:  python tools/sync_admin_engine.py --check
+# ───────────────────────────────────────────────────────────────────────────
 """
 Admin Commands Cog - Multi-Message Config Panel
 
@@ -13,23 +19,34 @@ Message pattern:
 """
 
 import time
+import logging
 from collections.abc import Awaitable, Callable
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
-from storage.audit_log import get_audit_log_manager
-from storage.config_manager import get_guild_config_manager
-from storage.setup_gatekeeper import setup_gatekeeper
-from utils.logger import get_logger
-
-from .panel_branding import OVERVIEW_FOOTER, SETUP_GUIDE_TEXT
+# All bot-specific backends (config, audit, premium, cache invalidation, panel-role
+# resolution, branding text, mod-tier set) are reached through this per-bot seam, so
+# this engine file stays byte-identical across every bot. Each bot ships its own
+# admin/bindings.py wiring these to its real backend.
+from .bindings import (
+    MOD_ALLOWED_CATEGORIES,
+    OVERVIEW_FOOTER,
+    SETUP_GUIDE_TEXT,
+    audit_log_entry,
+    get_setting,
+    set_setting,
+    invalidate_caches,
+    is_premium,
+    resolve_panel_role,
+)
 from .permission_checks import check_channel_permissions, check_role_permissions
-from .role_auth import MOD_ALLOWED_CATEGORIES, get_panel_role
+from .auth import effective_mod_allowed
 from .panel_configs import MAIN_PANEL
 from .views.panel_engine import (
     PanelNode,
+    ActionContext,
     PanelInputModal,
     build_menu_view,
     build_overview_view,
@@ -38,6 +55,9 @@ from .views.panel_engine import (
     build_dual_modal_trigger_view,
     build_file_upload_view,
     build_dict_editor_view,
+    build_paginated_list_view,
+    build_confirm_view,
+    build_grouped_region_view,
     _PanelDualInputModal,
     _child_summary,
     _option_label,
@@ -51,7 +71,7 @@ from .views.base import (
 )
 from .views.panel_views import PanelSession
 
-logger = get_logger("AdminCog")
+logger = logging.getLogger("AdminCog")
 
 
 class AdminCog(commands.Cog):
@@ -83,14 +103,14 @@ class AdminCog(commands.Cog):
     )
 
     def _invalidate_guild_caches(self, guild_id: int) -> None:
-        """Invalidate setup gatekeeper cache after any settings change."""
-        setup_gatekeeper.invalidate(guild_id)
+        """Invalidate per-guild caches after any settings change (bot-specific)."""
+        invalidate_caches(guild_id)
 
     @staticmethod
     def _resolve_section(node: PanelNode, parent_node: PanelNode | None = None) -> str:
         """Best-effort section label for audit entries.
 
-        Top-level category nodes own the section name (e.g. "bots").
+        Top-level category nodes own the section name (e.g. "tictactoe").
         Falls back to the node's own key when no parent context is available.
         """
         if parent_node is not None and parent_node.key:
@@ -115,29 +135,23 @@ class AdminCog(commands.Cog):
         user-visible save from appearing successful.
         """
         try:
-            al = get_audit_log_manager()
-            await al.log(
-                int(guild_id),
-                int(interaction.user.id),
-                action,
-                {
-                    "section": section or self._resolve_section(node, parent_node),
-                    "key": node.key,
-                    "old": old_value,
-                    "new": new_value,
-                },
+            await audit_log_entry(
+                guild_id=int(guild_id),
+                actor_id=int(interaction.user.id),
+                actor_name=str(interaction.user),
+                section=section or self._resolve_section(node, parent_node),
+                key=node.key,
+                old_value=old_value,
+                new_value=new_value,
+                action=action,
             )
         except Exception as e:
             logger.debug(f"Audit log write skipped for {node.key}: {e}")
 
-    async def _is_premium(self, guild_id: int) -> bool:
-        """Whether the guild has premium enabled (read from guild config)."""
-        try:
-            cm = await get_guild_config_manager()
-            cfg = await cm.get_config(guild_id)
-            return bool(cfg.premium.get("enabled"))
-        except Exception:
-            return False
+    @staticmethod
+    async def _is_premium(guild_id: int) -> bool:
+        """Whether the guild has premium (via the bot's bindings; canonical async)."""
+        return await is_premium(guild_id)
 
     # -- Master Panel (Message 1 -Overview) ------------------------------------
 
@@ -164,16 +178,15 @@ class AdminCog(commands.Cog):
         guild = interaction.guild
         admin_id = interaction.user.id
 
-        # Resolve panel access tier. Gate invocation.
-        cm = await get_guild_config_manager()
-        cfg = await cm.get_config(guild.id)
-        panel_role = get_panel_role(interaction.user, cfg)
+        # Resolve panel access tier. Gate invocation; mods see a restricted overview.
+        panel_role = await resolve_panel_role(interaction.user, guild.id)
         if panel_role == "none":
             await interaction.response.send_message(
                 view=build_notice_layout(
                     "Permission Denied",
                     "You do not have permission to use the admin panel. "
-                    "Requires the **Manage Server** permission.",
+                    "Requires **Manage Server**, the configured Admin role, "
+                    "or the configured Mod role.",
                 ),
                 ephemeral=True,
             )
@@ -184,14 +197,15 @@ class AdminCog(commands.Cog):
             f"(role={panel_role})"
         )
 
-        # Setup guide visibility (in-memory for this session; not persisted).
-        guide_state = {"hidden": False}
+        # Fetch setup guide visibility state
+        guide_state = {"hidden": bool(await get_setting("hide_setup_guide", guild.id, default=False))}
 
         # Config details toggle (compact by default, not persisted)
         details_state = {"expanded": False}
 
         # Shared session for synced timeout across both messages
         session = PanelSession(interaction)
+        session.panel_role = panel_role  # let nav/save handlers gate by tier
 
         async def on_toggle_guide(toggle_interaction: discord.Interaction):
             if not self._check_cooldown(admin_id, "setup_guide_toggle"):
@@ -201,7 +215,11 @@ class AdminCog(commands.Cog):
                 )
                 return
 
-            guide_state["hidden"] = not guide_state["hidden"]
+            new_hidden = not guide_state["hidden"]
+            guide_state["hidden"] = new_hidden
+
+            await set_setting("hide_setup_guide", new_hidden, guild.id)
+
             layout = await _build_overview()
             await toggle_interaction.response.edit_message(view=layout)
 
@@ -220,6 +238,18 @@ class AdminCog(commands.Cog):
         async def on_main_select(sel_interaction: discord.Interaction, child_key: str):
             child = MAIN_PANEL.children.get(child_key)
             if not child:
+                return
+
+            # Mod role may only open categories whose effective mod_allowed is True.
+            if panel_role == "mod" and not effective_mod_allowed(MAIN_PANEL, child):
+                notice = build_notice_layout(
+                    "Admin Only",
+                    "This section is restricted to server admins. "
+                    "Mods can only adjust per-game settings.",
+                )
+                refreshed = await _build_overview()
+                await sel_interaction.response.edit_message(view=refreshed)
+                await sel_interaction.followup.send(view=notice, ephemeral=True)
                 return
 
             # Lock check
@@ -266,6 +296,11 @@ class AdminCog(commands.Cog):
             deep_summary = await self._gather_deep_summaries(MAIN_PANEL, guild.id, guild)
             toggle_states = await self._gather_toggle_states(MAIN_PANEL, guild.id)
             locked = await self._compute_locked_keys(MAIN_PANEL, guild.id)
+            if panel_role == "mod":
+                locked = set(locked) | {
+                    k for k, child in MAIN_PANEL.children.items()
+                    if not effective_mod_allowed(MAIN_PANEL, child)
+                }
 
             # Preamble (Setup Guide) is wrapped in a readonly_container by build_overview_view;
             # pass the bare TextDisplay items so the engine can apply the accent color.
@@ -351,6 +386,16 @@ class AdminCog(commands.Cog):
         async def on_child_select(child_interaction: discord.Interaction, child_key: str):
             child = category_node.children.get(child_key)
             if not child:
+                return
+
+            # Mod gate: a child may opt out of mod access even inside a mod-allowed category.
+            if session.panel_role == "mod" and not effective_mod_allowed(MAIN_PANEL, child):
+                notice = build_notice_layout(
+                    "Admin Only", "This setting is restricted to server admins."
+                )
+                refreshed = await _build_category_view()
+                await child_interaction.response.edit_message(view=refreshed)
+                await child_interaction.followup.send(view=notice, ephemeral=True)
                 return
 
             # Lock check
@@ -495,8 +540,64 @@ class AdminCog(commands.Cog):
         elif node.kind == "dict_editor":
             await self._show_dict_editor(interaction, node, guild, parent_node, grandparent_node, edit, back_label, refresh_parent, session)
 
+        elif node.kind == "paginated_list":
+            await self._show_paginated_list(interaction, node, guild, parent_node, grandparent_node, edit, back_label, refresh_parent, session)
+
+        elif node.kind == "grouped_paginated_select":
+            await self._show_grouped_paginated_select(interaction, node, guild, parent_node, grandparent_node, edit, back_label, refresh_parent, session)
+
+        elif node.kind == "action":
+            await self._show_action(interaction, node, guild, parent_node, grandparent_node, edit, back_label, refresh_parent, session)
+
+    # -- Action nodes (bot-specific flows behind one extension hook) ------------
+
+    async def _show_action(
+        self, interaction, node, guild, parent_node, grandparent_node, edit, back_label, refresh_parent, session=None,
+    ):
+        """Dispatch an ``action``-kind node to its bot-specific handler.
+
+        ``action`` is the single extension point: any interactive flow that doesn't
+        fit the generic (guild_id, values) leaf contract (premium activation, bulk
+        reset/delete, bespoke multi-step editors) lives in a per-bot module and is
+        attached to a node as ``on_run``. The engine just builds the ActionContext
+        and hands off — it never needs to know what the handler does.
+
+        Handler contract:  async def on_run(cog, interaction, guild, ctx: ActionContext)
+        """
+        if node.on_run is None:
+            logger.warning(f"action node {node.key!r} has no on_run handler")
+            return
+        # Defense in depth: mods cannot run an action whose effective mod_allowed is False.
+        if getattr(session, "panel_role", "admin") == "mod" and not effective_mod_allowed(MAIN_PANEL, node):
+            await interaction.response.send_message(
+                view=build_notice_layout("Admin Only", "This action is restricted to server admins."),
+                ephemeral=True,
+            )
+            return
+        ctx = ActionContext(
+            session=session,
+            parent_node=parent_node,
+            grandparent_node=grandparent_node,
+            edit=edit,
+            refresh_parent=refresh_parent,
+            is_premium=await self._is_premium(guild.id),
+            back_label=back_label,
+        )
+        try:
+            await node.on_run(self, interaction, guild, ctx)
+        except Exception:
+            logger.exception("action handler failed for %s", node.key)
+            try:
+                notice = build_notice_layout("Something went wrong", f"Could not open **{node.label}**.")
+                if interaction.response.is_done():
+                    await interaction.followup.send(view=notice, ephemeral=True)
+                else:
+                    await interaction.response.send_message(view=notice, ephemeral=True)
+            except Exception:
+                pass
+
     # -- Node Kind Handlers ----------------------------------------------------
-    # -- Menu nodes (on message 2, e.g. cooldowns sub-menu) --------------------
+    # -- Menu nodes (on message 2, e.g. counting_roles sub-menu) ---------------
 
     async def _show_menu(
         self, interaction, node, guild, parent_node, grandparent_node, edit, back_label, refresh_parent, session=None,
@@ -539,6 +640,16 @@ class AdminCog(commands.Cog):
         async def on_select(sel_interaction: discord.Interaction, child_key: str):
             child = node.children.get(child_key)
             if not child:
+                return
+
+            # Mod gate (inherited): block a mod from a child that opts out of mod access.
+            if getattr(session, "panel_role", "admin") == "mod" and not effective_mod_allowed(MAIN_PANEL, child):
+                notice = build_notice_layout(
+                    "Admin Only", "This setting is restricted to server admins."
+                )
+                refreshed = await _build_current_view()
+                await sel_interaction.response.edit_message(view=refreshed)
+                await sel_interaction.followup.send(view=notice, ephemeral=True)
                 return
 
             # Lock check
@@ -677,7 +788,7 @@ class AdminCog(commands.Cog):
                     notice = build_premium_layout(
                         "Premium Required",
                         "This option requires a **Premium** subscription.\n\n"
-                        "Activate a premium code in the **Premium** section of `/admin panel`.",
+                        "Use `/premium` to learn more about upgrading.",
                     )
                     await save_interaction.followup.send(view=notice, ephemeral=True)
                     return
@@ -689,7 +800,7 @@ class AdminCog(commands.Cog):
                         "Premium Required",
                         f"Free servers can select up to **{node.max_values}** channel(s).\n"
                         f"Upgrade to **Premium** to select up to **{node.premium_max_values}**.\n\n"
-                        "Activate a premium code in the **Premium** section of `/admin panel`.",
+                        "Use `/premium` to learn more about upgrading.",
                     )
                     await save_interaction.followup.send(view=notice, ephemeral=True)
                     return
@@ -713,6 +824,16 @@ class AdminCog(commands.Cog):
                             ephemeral=True,
                         )
                         return
+
+            # Value-level validation against live guild state (e.g. channel-in-category).
+            if node.value_validator and values:
+                err = await node.value_validator(guild, values)
+                if err:
+                    await save_interaction.followup.send(
+                        view=build_notice_layout("Invalid Selection", err),
+                        ephemeral=True,
+                    )
+                    return
 
             old_vals = list(await node.get_values(guild.id)) if node.get_values else []
             try:
@@ -1326,6 +1447,270 @@ class AdminCog(commands.Cog):
             session.register_view(layout)
         await self._send_or_edit(interaction, layout, edit)
 
+    # -- Paginated list nodes (on message 2) -----------------------------------
+
+    async def _show_paginated_list(
+        self, interaction, node, guild, parent_node, grandparent_node, edit, back_label, refresh_parent, session=None,
+    ):
+        """Render a paginated_list PanelNode on message 2.
+
+        Browses ``node.list_get_items`` in pages of ``node.list_page_size``; an
+        optional destructive per-item action (``node.list_action``) runs behind a
+        Confirm/Cancel step. The per-item Select is bounded to the current page,
+        so it never exceeds Discord's 25-option cap.
+        """
+        page_size = max(1, node.list_page_size)
+        page_state = {"page": 0}
+        is_premium = await self._is_premium(guild.id)
+
+        async def _fetch_items() -> list:
+            if node.list_get_items is None:
+                return []
+            try:
+                return list(await node.list_get_items(guild.id))
+            except Exception as e:
+                logger.exception(f"Failed to load list items for {node.key}: {e}")
+                return []
+
+        async def _build_list_layout() -> discord.ui.LayoutView:
+            items = await _fetch_items()
+            total = len(items)
+            total_pages = max(1, (total + page_size - 1) // page_size)
+            page_state["page"] = max(0, min(page_state["page"], total_pages - 1))
+            start = page_state["page"] * page_size
+            page_items = items[start:start + page_size]
+            return build_paginated_list_view(
+                node, page_items, page_state["page"], total, guild,
+                on_list_prev, on_list_next, on_list_pick, on_list_back,
+                back_label, is_premium=is_premium,
+            )
+
+        async def on_list_prev(prev_interaction: discord.Interaction):
+            page_state["page"] = max(0, page_state["page"] - 1)
+            await prev_interaction.response.edit_message(view=await _build_list_layout())
+
+        async def on_list_next(next_interaction: discord.Interaction):
+            page_state["page"] += 1
+            await next_interaction.response.edit_message(view=await _build_list_layout())
+
+        async def on_list_back(back_interaction: discord.Interaction):
+            if parent_node:
+                await self._navigate_to(
+                    back_interaction, parent_node, guild,
+                    parent_node=grandparent_node,
+                    edit=True,
+                    refresh_parent=refresh_parent,
+                    session=session,
+                )
+            else:
+                await back_interaction.response.edit_message(
+                    view=create_empty_layout(f"{node.label} configuration closed.")
+                )
+
+        async def on_list_pick(pick_interaction: discord.Interaction, value: str):
+            if node.list_action is None:
+                return
+            items = await _fetch_items()
+            chosen = next(
+                (it for it in items if str(node.list_item_value(it)) == str(value)),
+                None,
+            )
+            if chosen is None:
+                # Item already gone (deleted elsewhere / list refreshed) — re-render.
+                await pick_interaction.response.edit_message(view=await _build_list_layout())
+                return
+
+            confirm_text = (
+                node.list_action_confirm_line(chosen)
+                if node.list_action_confirm_line is not None
+                else node.list_format_line(chosen, 0)
+            )
+            action_label = node.list_action_label or "Confirm"
+
+            async def on_list_confirm(confirm_interaction: discord.Interaction):
+                if not self._check_cooldown(confirm_interaction.user.id, node.key):
+                    await confirm_interaction.response.send_message(
+                        view=build_notice_layout("Slow Down", "Please wait a moment before trying again."),
+                        ephemeral=True,
+                    )
+                    return
+                await confirm_interaction.response.defer(ephemeral=True)
+                try:
+                    success = await node.list_action(guild.id, value)
+                except Exception as e:
+                    logger.exception(f"List action failed for {node.key} ({value}): {e}")
+                    success = False
+
+                if success:
+                    self._invalidate_guild_caches(guild.id)
+                    logger.info(
+                        f"Admin {confirm_interaction.user} ran '{action_label}' on "
+                        f"{node.key} ({value}) in guild {guild.id}"
+                    )
+                    await self._audit(
+                        confirm_interaction, guild.id, node,
+                        old_value=str(value), new_value=None,
+                        action="delete", parent_node=parent_node,
+                    )
+                    try:
+                        await confirm_interaction.edit_original_response(view=await _build_list_layout())
+                    except discord.HTTPException as http_exc:
+                        logger.warning("Could not refresh paginated list: %s", http_exc)
+                    if refresh_parent:
+                        await refresh_parent()
+                else:
+                    await confirm_interaction.followup.send(
+                        view=build_notice_layout(
+                            "Failed",
+                            f"Failed to {action_label.lower()} the selected item.",
+                        ),
+                        ephemeral=True,
+                    )
+
+            async def on_list_cancel(cancel_interaction: discord.Interaction):
+                await cancel_interaction.response.edit_message(view=await _build_list_layout())
+
+            confirm_layout = build_confirm_view(
+                f"{action_label}?",
+                confirm_text,
+                on_list_confirm,
+                on_list_cancel,
+                confirm_label=action_label,
+                key=node.key,
+            )
+            await pick_interaction.response.edit_message(view=confirm_layout)
+
+        layout = await _build_list_layout()
+        if session:
+            session.register_view(layout)
+        await self._send_or_edit(interaction, layout, edit)
+
+    # -- Grouped paginated select nodes (on message 2) -------------------------
+
+    async def _show_grouped_paginated_select(
+        self, interaction, node, guild, parent_node, grandparent_node, edit, back_label, refresh_parent, session=None,
+    ):
+        """Render a grouped_paginated_select PanelNode on message 2.
+
+        Two-step picker: pick a group, then pick an item within it (the item step
+        is paginated via build_paginated_list_view). Picking an item auto-saves it
+        through the normal get_values/set_values leaf contract and returns to the
+        parent menu so the overview reflects the new value.
+        """
+        page_size = max(1, node.list_page_size)
+        state: dict = {"region": None, "page": 0}
+        is_premium = await self._is_premium(guild.id)
+
+        async def _build_region_layout() -> discord.ui.LayoutView:
+            regions = list(node.group_get_groups()) if node.group_get_groups else []
+            saved: list = []
+            if node.get_values:
+                try:
+                    saved = list(await node.get_values(guild.id))
+                except Exception:
+                    saved = []
+            current_label = _child_summary(node, saved, guild) if saved else ""
+            return build_grouped_region_view(
+                node, regions, current_label,
+                on_region_pick, on_region_back, back_label, is_premium=is_premium,
+            )
+
+        async def _build_items_layout() -> discord.ui.LayoutView:
+            try:
+                items = list(node.group_get_items(state["region"])) if node.group_get_items else []
+            except Exception as e:
+                logger.exception(f"Failed to load group items for {node.key}: {e}")
+                items = []
+            total = len(items)
+            total_pages = max(1, (total + page_size - 1) // page_size)
+            state["page"] = max(0, min(state["page"], total_pages - 1))
+            start = state["page"] * page_size
+            page_items = items[start:start + page_size]
+            return build_paginated_list_view(
+                node, page_items, state["page"], total, guild,
+                on_item_prev, on_item_next, on_item_pick, on_item_back,
+                back_label="Back", is_premium=is_premium,
+            )
+
+        async def on_region_pick(pick_interaction: discord.Interaction, region: str):
+            state["region"] = region
+            state["page"] = 0
+            await pick_interaction.response.edit_message(view=await _build_items_layout())
+
+        async def on_region_back(back_interaction: discord.Interaction):
+            if parent_node:
+                await self._navigate_to(
+                    back_interaction, parent_node, guild,
+                    parent_node=grandparent_node, edit=True,
+                    refresh_parent=refresh_parent, session=session,
+                )
+            else:
+                await back_interaction.response.edit_message(
+                    view=create_empty_layout(f"{node.label} configuration closed.")
+                )
+
+        async def on_item_prev(prev_interaction: discord.Interaction):
+            state["page"] = max(0, state["page"] - 1)
+            await prev_interaction.response.edit_message(view=await _build_items_layout())
+
+        async def on_item_next(next_interaction: discord.Interaction):
+            state["page"] += 1
+            await next_interaction.response.edit_message(view=await _build_items_layout())
+
+        async def on_item_back(back_interaction: discord.Interaction):
+            # Back from the item step returns to the group-picker step.
+            state["region"] = None
+            state["page"] = 0
+            await back_interaction.response.edit_message(view=await _build_region_layout())
+
+        async def on_item_pick(pick_interaction: discord.Interaction, value: str):
+            if not self._check_cooldown(pick_interaction.user.id, node.key):
+                await pick_interaction.response.send_message(
+                    view=build_notice_layout("Slow Down", "Saving too quickly — please wait a moment."),
+                    ephemeral=True,
+                )
+                return
+            await pick_interaction.response.defer(ephemeral=True)
+            old_vals = list(await node.get_values(guild.id)) if node.get_values else []
+            try:
+                success = await node.set_values(guild.id, [value])
+            except Exception as e:
+                logger.exception(f"grouped_paginated_select save failed for {node.key} ({value}): {e}")
+                success = False
+
+            if success:
+                self._invalidate_guild_caches(guild.id)
+                logger.info(f"Admin {pick_interaction.user} updated {node.key} in guild {guild.id}")
+                await self._audit(
+                    pick_interaction, guild.id, node,
+                    old_value=old_vals, new_value=[value],
+                    action="set", parent_node=parent_node,
+                )
+                # Return to the parent menu so the overview reflects the new value.
+                if parent_node:
+                    await self._navigate_to(
+                        pick_interaction, parent_node, guild,
+                        parent_node=grandparent_node, edit=True,
+                        refresh_parent=refresh_parent, session=session,
+                    )
+                else:
+                    try:
+                        await pick_interaction.edit_original_response(view=await _build_region_layout())
+                    except discord.HTTPException:
+                        pass
+                if refresh_parent:
+                    await refresh_parent()
+            else:
+                await pick_interaction.followup.send(
+                    view=build_notice_layout("Failed to save", f"Failed to save **{node.label}**."),
+                    ephemeral=True,
+                )
+
+        layout = await _build_region_layout()
+        if session:
+            session.register_view(layout)
+        await self._send_or_edit(interaction, layout, edit)
+
     # -- Inline modal (child of menu) ------------------------------------------
 
     async def _handle_inline_modal(
@@ -1410,12 +1795,6 @@ class AdminCog(commands.Cog):
             if success:
                 self._invalidate_guild_caches(guild.id)
                 logger.info(f"Admin {sel_interaction.user} updated {child.key} in guild {guild.id}")
-                if child.post_save_hook:
-                    try:
-                        saved = [value] if 'value' in locals() else []
-                        await child.post_save_hook(modal_interaction, guild.id, saved)
-                    except Exception:
-                        logger.debug("post_save_hook failed for %s", child.key)
                 # Refresh parent menu view
                 new_summary = await self._gather_summaries(parent_menu, guild.id)
                 locked = await self._compute_locked_keys(parent_menu, guild.id)
@@ -1477,6 +1856,10 @@ class AdminCog(commands.Cog):
         self, node: PanelNode, guild_id: int, guild: discord.Guild,
     ) -> str:
         """Produce a guild-aware summary string for a single leaf node."""
+        if node.kind == "paginated_list":
+            count = await self._paginated_list_count(node, guild_id)
+            return f"{count} item(s)" if count else "Empty"
+
         if not node.get_values:
             return "Not configured"
         try:
@@ -1531,6 +1914,10 @@ class AdminCog(commands.Cog):
         """Fetch current values for all children of a menu node."""
         summary_map: dict[str, list] = {}
         for key, child in node.children.items():
+            if child.kind == "paginated_list":
+                count = await self._paginated_list_count(child, guild_id)
+                summary_map[key] = ["x"] * count
+                continue
             if child.get_values:
                 try:
                     summary_map[key] = list(await child.get_values(guild_id))
@@ -1583,6 +1970,18 @@ class AdminCog(commands.Cog):
             else:
                 summary_map[key] = []
         return summary_map
+
+    @staticmethod
+    async def _paginated_list_count(node: PanelNode, guild_id: int) -> int:
+        """Item count for a paginated_list node (efficient list_count, else len)."""
+        try:
+            if node.list_count is not None:
+                return int(await node.list_count(guild_id))
+            if node.list_get_items is not None:
+                return len(list(await node.list_get_items(guild_id)))
+        except Exception:
+            return 0
+        return 0
 
     async def _compute_locked_keys(self, node: PanelNode, guild_id: int) -> set[str]:
         """Compute which children of a menu node should be locked."""
