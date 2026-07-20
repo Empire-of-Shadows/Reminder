@@ -39,7 +39,7 @@ cd docker
 ./reminder.sh -b Dev          # build a specific branch (default: Dev)
 ```
 
-`reminder.sh` backs up current images, rebuilds, polls both containers' health checks, and rolls back automatically on failure. The bot exposes health on **50006**, the dashboard on **54006**.
+`reminder.sh` backs up current images, rebuilds, polls both containers' health checks, and rolls back automatically on failure. The bot exposes health on **50014**, the dashboard on **54014**.
 
 ## Architecture
 
@@ -48,7 +48,7 @@ cd docker
 `Reminder.py` mirrors TheCodex's `codex.py`:
 
 1. Load `docker/.env` (or `.env`), then set up application-wide logging via `setup_application_logging`.
-2. `start_services()`: initialize `db_manager`, start the health server on port 50006, then `bot.start(TOKEN)`.
+2. `start_services()`: initialize `db_manager`, start the health server on port 50014, then `bot.start(TOKEN)`.
 3. `on_ready()` (registered via `bot.event`) performs **one-time init** guarded by `bot._init_done`:
    - `attach_databases()` — initialize and attach all storage managers to `bot`.
    - `load_cogs()` — auto-discover and load every cog.
@@ -80,7 +80,7 @@ Defines the shared `bot = commands.Bot(...)` instance and `TOKEN`. Intents: mess
 
 ```
 Reminder.py            # entry point
-health_endpoint.py     # standalone HTTP health server (port 50006)
+health_endpoint.py     # standalone HTTP health server (port 50014)
 utils/                 # bot.py, sync.py, logger.py, health_endpoint_template.py
 storage/               # data layer (see below)
 Features/              # event-driven cogs (auto-loaded)
@@ -164,7 +164,7 @@ FastAPI app (`dashboard/app.py`, run via `python -m dashboard.app`), architectur
 
 **Security infra** (mirrors Codex): `auth/csrf.py` (per-session CSRF token, `X-CSRF-Token` header enforced on POST/PUT/PATCH/DELETE via `csrf_middleware` + `verify_csrf` dependency; `GET /auth/csrf` issues it), `rate_limit.py` (in-process per-IP fixed-window limiter on `/auth/discord*` and `/api/stats`), and a `security_headers` middleware adding CSP / `X-Frame-Options: DENY` / `X-Content-Type-Options` / HSTS (prod).
 
-**Routes**: OAuth (`/auth/discord`, `/auth/discord/callback`, `/auth/logout`), API (`/api/...` from `routers/dashboard.py` + `routers/settings.py`, gated by `get_current_user` / `require_guild_manage`), `GET /health`. Config in `dashboard/config.py` (loads `docker/.env`, fails fast on missing creds); server bound to `DASHBOARD_HOST`/`DASHBOARD_PORT` (54006 in Docker).
+**Routes**: OAuth (`/auth/discord`, `/auth/discord/callback`, `/auth/logout`), API (`/api/...` from `routers/dashboard.py` + `routers/settings.py`, gated by `get_current_user` / `require_guild_manage`), `GET /health`. Config in `dashboard/config.py` (loads `docker/.env`, fails fast on missing creds); server bound to `DASHBOARD_HOST`/`DASHBOARD_PORT` (54014 in Docker).
 
 **Frontend stack** — same as TheCodex/TheHost: a **React 19 + TypeScript + Vite 6** SPA (`react-router-dom`) in `dashboard/frontend/` (`npm run build` → `tsc -b && vite build`), styled with the shared `eos-tokens.css` / `discord-theme.css`. `src/api/client.ts` is a CSRF-aware fetch wrapper (auto-fetches `/auth/csrf`, retries on stale token, redirects to `/login` on 401). Pages: `LoginPage`, `DashboardPage` (guild picker via `/api/me` + `/api/guilds` + `/api/bot-invite-url`), `SettingsPage` (`/settings/:guildId` — bump config form populated from `/api/guilds/{id}/channels`, `/roles`, `/bump-bots`). `app.py` serves the built SPA from `frontend/dist` (mounts `/assets`, falls back to `index.html` for client-side routes). The Vite build runs in **stage 1 of `docker/Dockerfile.dashboard`** (node:22) and is copied into the Python image; `node_modules/` and `frontend/dist/` are gitignored.
 
@@ -206,7 +206,7 @@ Watch `[extract_all_text]`, `[on_message]`, `[on_message_edit]`, `[on_raw_messag
 
 - **TimerHandler singleton**: exactly one instance at `bot.timer_handler` (created in `attach_databases()`).
 - **WeBump**: sends empty messages then edits ~1s later — handled by force-refetch on edit + raw gateway parsing.
-- **Health ports**: bot 50006, dashboard 54006 (sequential after Codex 50002/54002 and Host 50003/54003).
+- **Health ports**: bot 50014, dashboard 54014 (Reminder = bot index 14 in `portsRules.md`; siblings: Codex 50010/54010, Host 50011/54011).
 - **MongoDB conventions**: guild IDs stored as strings (`_id`); timestamps as integer Unix seconds; nested updates via dot notation (`timestamps.disboard_timestamp`); dynamic fields prefixed `timer_message_{channel_id}`.
 
 ### Environment Variables
@@ -216,7 +216,7 @@ Dashboard: `GATEKEEPER_CLIENT_ID`, `GATEKEEPER_CLIENT_SECRET`, `GATEKEEPER_REDIR
 
 ## Testing Locally
 
-1. Populate `docker/.env`, run `python Reminder.py`; confirm logs show DB init, all managers attached, cogs loaded (including `Features.idle`), commands synced, and the health server on port 50006.
-2. `curl http://localhost:50006/health` → `status: healthy`.
+1. Populate `docker/.env`, run `python Reminder.py`; confirm logs show DB init, all managers attached, cogs loaded (including `Features.idle`), commands synced, and the health server on port 50014.
+2. `curl http://localhost:50014/health` → `status: healthy`.
 3. `/admin panel` → **Core Setup** to set bump channel + role; trigger a real bump bot; verify `Timer started: {guild_id}:{channel_id}:bump:{bot_name}` in logs.
-4. Dashboard: `python -m dashboard.app`, then `curl http://localhost:54006/health`.
+4. Dashboard: `python -m dashboard.app`, then `curl http://localhost:54014/health`.

@@ -14,7 +14,7 @@ __pycache__/
 venv/
 env/
 
-# Node (frontend deps are reinstalled in the image via npm ci)
+# Node (frontend deps are reinstalled in the image via npm install)
 **/node_modules/
 
 # Runtime artifacts

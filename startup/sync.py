@@ -175,8 +175,9 @@ async def attach_databases():
             failed_logs.append(f"{s}❌ db_manager → Error: {db_error}\n")
             raise  # Can't continue without db_manager
 
-        # Cache manager
-        from storage.cache import create_cache_manager
+        # Cache manager (bot-owned seam; renamed from storage/cache.py so it no longer
+        # collides with the vendored storage/cache/ package, which wins import resolution).
+        from storage.guild_cache import create_cache_manager
         try:
             cache_manager = create_cache_manager(db_manager)
             result, is_success = await attach_attribute("cache_manager", cache_manager)
