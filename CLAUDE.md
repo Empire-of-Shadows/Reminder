@@ -6,7 +6,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Imperial Reminder** is a Discord bot that tracks and reminds users when it's time to bump their server on Discord server-listing services (Disboard, BumpIt, Bump4You, WeBump, OneBump). It monitors bump success messages, schedules reminders based on cooldown periods, and manages guild-specific configuration in MongoDB. A FastAPI web dashboard lets server admins configure the bot via Discord OAuth.
 
-ImperialReminder follows the **shared Empire of Shadows ecosystem architecture** used by its sibling bots **TheCodex** (`Informatinal/TheCodex`) and **TheHost** (`FunEngagement/TheHost`): a thin entry point, a `utils/bot.py` bot instance, auto-discovery cog loading via `utils/sync.py`, a `storage/` manager layer attached to the bot, a standalone HTTP health endpoint, and a two-service Docker deployment (bot + dashboard) on the external `obsidian_grid` network.
+ImperialReminder is fully aligned with the **shared Empire of Shadows engine architecture** (same standard as TheDecree, TheCodex, and Stygian-Relay): all four shared engines are vendored and drift-gated, with thin bot-owned seams. See the monorepo-root `../../CLAUDE.md` for the ecosystem-wide rules; this file wins on local details.
+
+## Vendored engines - never edit the copies
+
+Four engine masters in `EmpireSystems/` are vendored into this repo. Files carrying a `VENDORED ... DO NOT EDIT HERE` banner are generated - edit the master and re-run the sync tool **from the monorepo root, always with `--bot reminder`**:
+
+| Engine | Vendored into | Sync tool | Bot-owned seam |
+|---|---|---|---|
+| storage_engine | `storage/` (48 files) | `python EmpireSystems/tools/sync_storage_engine.py --bot reminder` | `storage/settings/{bindings,collections}.py`, `config_manager.py`, `audit_log.py`, `setup_gatekeeper.py`, `sub_systems/` |
+| admin_engine | `admin/` (33 files) | `python EmpireSystems/tools/sync_admin_engine.py --bot reminder` | `admin/settings/{bindings,panel_configs,panel_branding,role_auth}.py` |
+| runtime_engine | `health_endpoint.py`, `startup/{phases,loader,presence}.py`, `utils/env.py` | `python EmpireSystems/tools/sync_runtime_engine.py --bot reminder` | `startup/bot.py`, `startup/sync.py` |
+| dashboard_engine | `dashboard/_engine/`, `dashboard/frontend/src/_engine/` | `python EmpireSystems/tools/sync_dashboard_engine.py --bot reminder` | `dashboard/config.py`, `db.py`, `app.py`, `auth/{dependencies,panel_role}.py`, `routers/`, `services/` |
+
+Drift is gated with each tool's `--check --bot reminder`; all four report a real green (no `[PENDING-MIGRATION]`).
 
 ## Running the Bot
 
@@ -15,164 +28,84 @@ ImperialReminder follows the **shared Empire of Shadows ecosystem architecture**
 ```bash
 pip install -r requirements.txt
 
-# Provide environment variables via docker/.env (preferred) or a local .env.
+# Environment via docker/.env (preferred; docker/.env.local dev override wins).
 # Required: DISCORD_TOKEN (or TOKEN), MONGO_URI
-# Dashboard also uses: GATEKEEPER_CLIENT_ID/SECRET, DASHBOARD_SECRET_KEY, DASHBOARD_PORT
 
-# Run the bot
-python Reminder.py
-
-# Run the dashboard (separate process)
-python -m dashboard.app
+python Reminder.py            # bot (health on 50014)
+python -m dashboard.app       # dashboard (separate process, port 54014)
 ```
-
-`Reminder.py` and `dashboard/config.py` both load `docker/.env` if present, otherwise fall back to a standard `.env`.
 
 ### Docker Deployment
 
-Docker assets live in `docker/` (mirroring TheCodex/TheHost). Deploy with the helper script:
-
-```bash
-cd docker
-./reminder.sh                 # cached build of both services
-./reminder.sh -n              # no-cache build
-./reminder.sh -b Dev          # build a specific branch (default: Dev)
-```
-
-`reminder.sh` backs up current images, rebuilds, polls both containers' health checks, and rolls back automatically on failure. The bot exposes health on **50014**, the dashboard on **54014**.
+Docker assets live in `docker/`. `./reminder.sh` (in `docker/`) backs up images, rebuilds both services, polls health, and rolls back on failure. Bot health on **50014**, dashboard on **54014**; both on the external `obsidian_grid` network.
 
 ## Architecture
 
 ### Entry Point and Lifecycle (`Reminder.py`)
 
-`Reminder.py` mirrors TheCodex's `codex.py`:
+1. Load `docker/.env` (+ `.env.local` override), `setup_application_logging` (loguru via `storage.log`).
+2. `_async_main()`: signal handlers -> `db_manager.initialize()` -> health server (vendored runtime_engine endpoint, `bot_name="ImperialReminder"`; returns **503 unhealthy** when the DB is down, no recon fields) -> `start_services()` races `bot.start()` against a shutdown event.
+3. `on_ready()` (idempotent via `bot._init_done`), phases in order: Database Attachment -> Cog Loading -> Command Sync -> Status Setup -> Timer Reschedule -> Background Tasks (idle rotation). On reconnect only presence refreshes.
+4. `shutdown_handler()` order matters: health server -> cancel + await background tasks (TimerHandler `active_timers`, BumpHandler batch tasks, idle rotation) -> `bot.close()` -> `db_manager.close()` LAST (cog teardown may touch the DB). Bump timers are safe to drop - they rebuild from stored timestamps on boot.
 
-1. Load `docker/.env` (or `.env`), then set up application-wide logging via `setup_application_logging`.
-2. `start_services()`: initialize `db_manager`, start the health server on port 50014, then `bot.start(TOKEN)`.
-3. `on_ready()` (registered via `bot.event`) performs **one-time init** guarded by `bot._init_done`:
-   - `attach_databases()` — initialize and attach all storage managers to `bot`.
-   - `load_cogs()` — auto-discover and load every cog.
-   - `bot.tree.sync()` — sync global slash commands.
-   - On reconnect it only refreshes presence.
-4. SIGINT/SIGTERM handlers trigger `shutdown_handler()`: stop the health server, close the bot.
+### Bot Instance (`startup/bot.py`)
 
-### Bot Instance (`utils/bot.py`)
+Slash-only: `command_prefix=commands.when_mentioned`, no prefix commands anywhere. Lean intents: `Intents.none()` + `guilds` + `guild_messages` + `message_content` (needed to read bump bots' messages). Constructor `AllowedMentions(everyone=False, roles=False, users=False)`; the reminder sender re-enables ONLY the configured bump role per send.
 
-Defines the shared `bot = commands.Bot(...)` instance and `TOKEN`. Intents: message_content, guilds, messages, members, presences, reactions, emojis. There is **no custom bot subclass** — managers are attached as attributes at runtime by `utils/sync.py` (see below). This replaces the old `shared_bot.py` / `CustomBot` design.
+### Startup Seam (`startup/sync.py`)
 
-### Cog Loading & Manager Attachment (`utils/sync.py`)
+Thin seam over the vendored `startup/loader.py`: `COG_DIRECTORIES = ["./commands", "./admin", "./Features"]` + `attach_databases()`. Auto-discovery: any `.py` under those roots defining `async def setup(bot)` is loaded - drop a file, no manual list.
 
-**Auto-discovery** (no manual cog list). `load_cogs()` walks `COG_DIRECTORIES = ["./commands", "./Features"]`, importing every `.py` file that defines `setup()` (skipping `__init__.py` and already-loaded modules). To add a cog, just drop a file with `async def setup(bot)` into `commands/` or `Features/`.
-
-`attach_databases()` initializes and attaches managers to `bot`, in order:
+`attach_databases()` initializes and attaches, in order:
 
 | Attribute | Source | Purpose |
-|-----------|--------|---------|
-| `bot.db_manager` | `storage.database_manager.db_manager` | MongoDB manager (must init first) |
-| `bot.cache_manager` | `storage.cache` | TTL cache |
-| `bot.audit_log` | `storage.audit_log` | change auditing |
-| `bot.guild_config_manager` | `storage.config_manager` | per-guild config |
-| `bot.setup_gatekeeper` | `storage.setup_gatekeeper` | feature gating |
-| `bot.premium_manager` | `storage.premium_manager` | premium features |
-| `bot.timer_handler` | `Features.time_handler.TimerHandler` | reminder scheduling |
-
-### Directory Layout
-
-```
-Reminder.py            # entry point
-health_endpoint.py     # standalone HTTP health server (port 50014)
-utils/                 # bot.py, sync.py, logger.py, health_endpoint_template.py
-storage/               # data layer (see below)
-Features/              # event-driven cogs (auto-loaded)
-  start_up.py          # schedules timers for all guilds on ready
-  time_handler.py      # TimerHandler
-  idle.py              # status rotation cog
-  bump/detection/handler.py     # BumpHandler (message detection + scheduling)
-  bump/display/embed_manager.py # timer display embeds
-  core/guild_lifecycle.py       # on_guild_join / on_guild_remove
-  premium/
-commands/              # slash-command cogs (auto-loaded)
-  admin/               # /admin panel — unified config panel (ported from TheHost/TheCodex)
-    admin_cog.py       # AdminCog + /admin panel command; PanelNode navigation engine
-    panel_configs.py   # MAIN_PANEL tree (Core Setup, Bump Bots, Messages, Premium)
-    panel_branding.py  # panel title/description/setup-guide text
-    role_auth.py       # access tier: MANAGE_GUILD -> "admin", else "none"
-    permission_checks.py
-    views/             # base.py (containers/cid), panel_engine.py (PanelNode + builders), panel_views.py (PanelSession)
-dashboard/             # FastAPI web dashboard (separate service)
-docker/                # Dockerfile, Dockerfile.dashboard, docker-compose.yml, reminder.sh, .env
-```
+|---|---|---|
+| `bot.db_manager` | `storage.settings.collections` | engine DatabaseManager (must init first) |
+| `bot.audit_log` | `storage.audit_log` | engine AuditLog over the TTL'd `audit_log` collection |
+| `bot.guild_config_manager` | `storage.config_manager` | typed wrapper over engine GuildConfigStore |
+| `bot.setup_gatekeeper` | `storage.setup_gatekeeper` | engine SetupGate (bump channel + role required) |
+| `bot.premium_manager` | `storage.premium` (engine) | entitlement-backed premium |
+| `bot.timer_handler` | `Features.time_handler.TimerHandler` | reminder scheduling (SINGLETON) |
+| `bot.idle_manager` | `Features.idle.IdleManager` | presence rotation (engine PresenceRotator seam) |
 
 ### Storage Layer (`storage/`)
 
-- **`database_manager.py`** — `DatabaseManager` (with `core/connection_pool.py`, `core/collection_manager.py`, `core/collection_config.py`). Module-level singleton `db_manager`. `storage/__init__.py` re-exports the key symbols.
-- **`config_manager.py`** — `GuildConfig` **dataclass** + `GuildConfigManager`. Access config via attributes, not dict keys:
+- **Seam** `storage/settings/collections.py`: the collection registry (`settings_guild_data` = live guild config + bump timestamps in DB `ImperialReminder`; engine premium `entitlements` / `premium_state` / `bot_settings`; TTL'd `audit_log`) passed as `collection_configs=` to the engine base, plus the relay-style `get_collection`/`db_client` accessors the engine premium subsystem binds through. `db_manager` is imported as `from storage.settings.collections import db_manager`.
+- **`config_manager.py`**: `GuildConfig` dataclass (typed domain access) + `GuildConfigManager`, a thin wrapper over the engine `GuildConfigStore` (`id_field="_id"`, 30s cache TTL bounding cross-process staleness vs the dashboard). Every write is a surgical dotted `$set` - never a full-document replace. `peek()` gives sync display-only access; `invalidate()` drops a guild's cache.
   ```python
   config = await bot.guild_config_manager.get_config(guild_id)
   if not config.bump_channel or not config.bump_role:
       return
-  delay = config.bot_delay.get(bot_name, DEFAULT_DELAY)
-  ts = config.timestamps.get(f"{bot_name}_timestamp")
+  await bot.guild_config_manager.set_value(guild_id, "timestamps.disboard_timestamp", int(time.time()))
   ```
-  `GuildConfig` fields: `enabled_bots`, `bump_channel`, `bump_role`, `timers_channel`, `timers_message`, `custom_message`, `premium`, `bot_delay`, `timestamps`, plus `extra_data` for dynamic keys like `timer_message_{channel_id}`. `to_dict()`/`from_dict()` handle (de)serialization.
-- **`sub_systems/bump_config.py`** — bump-bot constants: `DEFAULT_GUILD_CONFIG`, `BUMP_BOTS_INFO`, `BUMP_BOTS`, `BUMP_BOTS_PREMIUM`, `BUMP_BOTS_CHOICES`, `SUCCESS_KEYWORDS`, and per-bot IDs/keywords.
-- **`cache.py`, `audit_log.py`, `premium_manager.py`, `setup_gatekeeper.py`** — feature managers.
+  `GuildConfig` fields: `enabled_bots`, `bump_channel`, `bump_role`, `timers_channel`, `timers_message`, `custom_message`, `roles` (panel access lists), `premium` (only `guild_webhook` is still meaningful - the `enabled` flag is retired), `bot_delay`, `timestamps`, `extra_data` (dynamic keys like `timer_message_{channel_id}`).
+- **`sub_systems/bump_config.py`**: bump-bot constants (`BUMP_BOTS_INFO`, `BUMP_BOTS`, `BUMP_BOTS_PREMIUM`, `SUCCESS_KEYWORDS`, ...).
+- Logging: `from storage.log import get_logger, setup_application_logging` (loguru engine subsystem). The old `storage/logging/` and `utils/logger.py` are gone.
 
 ### TimerHandler (`Features/time_handler.py`)
 
-Production-grade scheduler for all reminders. **One instance** is created in `attach_databases()` and stored at `bot.timer_handler` — never create another (duplication breaks cancellation and remaining-time math).
-
-- Monotonic time tracking; jitter to avoid thundering herd; exponential-backoff retries; callback timeouts.
-- Timer dedup via `replace_if_sooner_than`; scope-based cancellation by guild/channel/type; pause/resume.
-- Timer ID format: `{guild_id}:{channel_id}:{timer_type}:{name}`.
-
-```python
-await bot.timer_handler.run_timer(
-    channel_id=channel.id, guild_id=guild.id, name="disboard",
-    delay=7200.0, callback=self._send_bump_reminder, timer_type="bump",
-    args=(channel.id, guild.id, role_id, "disboard"),
-    jitter=3.0, max_retries=2, backoff=5.0, callback_timeout=10.0,
-    replace_if_sooner_than=2.0,
-)
-```
+Production-grade scheduler for all reminders. **One instance** created in `attach_databases()` at `bot.timer_handler` - never create another (duplication breaks cancellation and remaining-time math). Monotonic time; jitter; exponential-backoff retries; callback timeouts; dedup via `replace_if_sooner_than`; scope cancellation; pause/resume. Timer ID: `{guild_id}:{channel_id}:{timer_type}:{name}`. Bot-owned by policy (sole consumer fleet-wide) - do not promote.
 
 ### BumpHandler (`Features/bump/detection/handler.py`)
 
-Most complex cog; detects bump-success messages and schedules reminders.
+Detects bump-success messages via **two listeners**: `on_message` and `on_message_edit` (WeBump edits ~1s after an empty message - handled by force-refetch on edit). `extract_all_text` aggregates embeds/content/components/attachments/stickers with a refetch fallback and normalization. `_resolve_bot_info` matches `author_id`/`webhook_id` against `BUMP_BOTS_INFO` (forgery-resistant: keywords alone never trigger). Success flow: save timestamp (dotted `$set`) -> compute timers -> schedule embed update -> schedule reminder. Reminders batch in a 10s window per channel (`channel_tasks`, cancelled in `cog_unload` AND at shutdown); premium guilds get `custom_message` + optional webhook delivery; sends use an explicit `AllowedMentions` that allows ONLY the bump role.
 
-**Four-layer detection** (Discord's events are inconsistent for webhook messages): `on_message` → `on_message_edit` → `on_raw_message_edit` → `on_socket_raw_receive`.
+### Premium (`commands/premium/` + engine `storage/premium/`)
 
-**Text extraction** (`extract_all_text`): aggregates embeds (title/description/fields/footer/author), content, components, attachments, stickers, referenced messages; refetches up to 3× (0.3/0.6/0.9s) for async embed population; `channel.history()` fallback; force-refetch for WeBump on edit; normalizes (lowercase, strip zero-width, collapse whitespace).
+Entitlement-backed premium on the shared engine (`PremiumManager`: `entitlements` fold into a derived `premium_state` per scope). The portable cog package (origin: Stygian-Relay) runs in **manual-grant-only mode** (no Discord SKUs yet): owners grant via `/premium-admin grant`, users check `/premium status`. Seam: `commands/premium/settings/config.py` (env-driven `PREMIUM_OWNER_IDS`, `PREMIUM_ADMIN_GUILD_IDS`, optional `PREMIUM_APPLICATION_ID` to enable reconcile). Reads go through `bot.premium_manager.is_premium_guild()` (bump handler, admin seam) or the derived `premium_state` doc (dashboard). The old staff-code system (`codes` / `entitlements_cache` collections, `Features/premium/`) is retired.
 
-**Bot detection** (`_resolve_bot_info`): matches `author_id` / `webhook_id` / `application_id` against `BUMP_BOTS_INFO`.
+### Admin Panel (`admin/`)
 
-**Success flow**: detect bot + keyword → save timestamp (`timestamps.{bot_name}_timestamp`) → read guild config delay → compute active/expired timers → schedule embed update → schedule reminder via `bot.timer_handler`. Reminders are batched in a 10s window per channel; custom messages support `{bump_role}` / `{bots}`; premium guilds can send via webhook.
-
-### StartUp (`Features/start_up.py`)
-
-On `on_ready`, for each guild: load config via `bot.guild_config_manager`, skip if no bump channel/role, call `bump_handler.get_timers(config)`, and reschedule each active timer with remaining = `end_time - time.time()`.
+Vendored admin_engine at the bot root; seam in `admin/settings/`. `MAIN_PANEL` tree: Core Setup (bump channel/role, timers channel), Bump Bots (enabled bots, per-bot cooldowns with premium tiers), Messages (custom message, timer embed), Panel Access (engine `panel_roles_pair` writing `roles.admin_role_ids`/`mod_role_ids` - the same lists the dashboard reads), Premium (live status via `info_action`). Tier resolution: engine `resolve_panel_role_from_config` (Manage Server OR configured roles).
 
 ### Dashboard (`dashboard/`)
 
-FastAPI app (`dashboard/app.py`, run via `python -m dashboard.app`), architecturally aligned with TheCodex's dashboard.
+FastAPI backend + React 19/TS/Vite SPA, on the shared dashboard_engine (`_engine/` backend: csrf/oauth/session/signing/panel_access/rate_limit/discord_cache; `frontend/src/_engine/`: EcosystemNav, formatError, eos-tokens, shared components). Shared GateKeeper SSO (identical `GATEKEEPER_*`, `DASHBOARD_SECRET_KEY`, `eos_session` cookie across all dashboards; `SHARED_SESSIONS_URI` -> `WebSessions.SharedSessions`).
 
-**Shared login (SSO)** — the dashboard uses the **shared GateKeeper Discord app** and **shared session store** common to TheHost/TheCodex/EcomBackend/ImperialReminder:
-- OAuth creds: `GATEKEEPER_CLIENT_ID` / `GATEKEEPER_CLIENT_SECRET` (identical across all dashboards).
-- Two Mongo connections (like TheHost/TheCodex): **`MONGO_URI`** = ImperialReminder bot data (guild config), **`SHARED_SESSIONS_URI`** = the shared login store holding **`WebSessions.SharedSessions`** + **`WebSessions.OAuthStates`** (`dashboard/db.py`). Point `SHARED_SESSIONS_URI` at the same Mongo the other dashboards use; it may equal `MONGO_URI` on a single cluster.
-- Session token is an opaque `token_urlsafe(48)` with a locked schema (`auth/session.py`); the cookie is the token signed by itsdangerous with salt `eos-session` (`auth/signing.py`). Cookie name `eos_session`; `DASHBOARD_SECRET_KEY` must be **identical** across services so a login on one dashboard is valid on all.
-- In production set `COOKIE_DOMAIN=.eosofficial.club` for cross-subdomain SSO.
-
-**Security infra** (mirrors Codex): `auth/csrf.py` (per-session CSRF token, `X-CSRF-Token` header enforced on POST/PUT/PATCH/DELETE via `csrf_middleware` + `verify_csrf` dependency; `GET /auth/csrf` issues it), `rate_limit.py` (in-process per-IP fixed-window limiter on `/auth/discord*` and `/api/stats`), and a `security_headers` middleware adding CSP / `X-Frame-Options: DENY` / `X-Content-Type-Options` / HSTS (prod).
-
-**Routes**: OAuth (`/auth/discord`, `/auth/discord/callback`, `/auth/logout`), API (`/api/...` from `routers/dashboard.py` + `routers/settings.py`, gated by `get_current_user` / `require_guild_manage`), `GET /health`. Config in `dashboard/config.py` (loads `docker/.env`, fails fast on missing creds); server bound to `DASHBOARD_HOST`/`DASHBOARD_PORT` (54014 in Docker).
-
-**Frontend stack** — same as TheCodex/TheHost: a **React 19 + TypeScript + Vite 6** SPA (`react-router-dom`) in `dashboard/frontend/` (`npm run build` → `tsc -b && vite build`), styled with the shared `eos-tokens.css` / `discord-theme.css`. `src/api/client.ts` is a CSRF-aware fetch wrapper (auto-fetches `/auth/csrf`, retries on stale token, redirects to `/login` on 401). Pages: `LoginPage`, `DashboardPage` (guild picker via `/api/me` + `/api/guilds` + `/api/bot-invite-url`), `SettingsPage` (`/settings/:guildId` — bump config form populated from `/api/guilds/{id}/channels`, `/roles`, `/bump-bots`). `app.py` serves the built SPA from `frontend/dist` (mounts `/assets`, falls back to `index.html` for client-side routes). The Vite build runs in **stage 1 of `docker/Dockerfile.dashboard`** (node:22) and is copied into the Python image; `node_modules/` and `frontend/dist/` are gitignored.
-
-**Backend API endpoints** (`routers/dashboard.py`, Discord calls cached with TTL + single-flight): `/api/me`, `/api/guilds` (session guilds where the user has MANAGE_GUILD, with bot-present/has-config flags), `/api/bot-invite-url`, `/api/bump-bots`, `/api/guilds/{id}/channels`, `/api/guilds/{id}/roles`, `/api/stats/public`. `routers/settings.py`: `GET`/`PUT /api/guilds/{id}/settings` (PUT requires CSRF). Access uses MANAGE_GUILD only (no admin/mod panel-role concept).
-
-### Logging (`utils/logger.py`)
-
-`get_logger(module_name)` factory: colored console + rotating file handlers, optional JSON/indented formatters, `PerformanceLogger`, singleton `LoggerManager`. `setup_application_logging(...)` is called once in `Reminder.py`. Logs land in `log/`.
+- Seam config keys in `config.py`: `RATE_LIMITS`, `OAUTH_REDIRECT_ALLOWLIST`, `OAUTH_DEFAULT_REDIRECT`, `ADMINISTRATOR_PERMISSION`, env-driven `TRUSTED_PROXY_IPS` (set behind a reverse proxy or proxied visitors share one rate bucket).
+- `auth/panel_role.py` is a thin 3-tier policy (admin/mod/none) over `_engine/auth/panel_access.py`: MANAGE_GUILD verified LIVE on access-gated routes; guild-list probes use `verify_manage_live=False`. Mod tier is read-only.
+- Settings PUT: whitelisted surgical dotted `$set` only (never a full-document write - the bot writes timestamps concurrently) and validates channel/role ids belong to the guild.
+- Discord API reads (bot guilds, bot id, channels, roles) go through the engine `_engine/discord_cache.py` (TTL + single-flight + bounded).
 
 ## Supported Bump Bots
 
@@ -186,37 +119,32 @@ Configured in `storage/sub_systems/bump_config.py`:
 | WeBump | 1154077045903593555 | 2 hours | - |
 | OneBump | 1028956609382199346 | 2 hours | 30 minutes |
 
-**Success keywords** live in `SUCCESS_KEYWORDS`; the bot matches them in content/embeds/components after normalization.
-
 ## Common Development Tasks
 
-### Add a new cog
-Drop a file defining `async def setup(bot)` into `commands/` or `Features/`. It is auto-loaded on next start. Use `bot.guild_config_manager`, `bot.timer_handler`, etc. — do not re-instantiate managers.
-
-### Add a new bump bot
-In `storage/sub_systems/bump_config.py`: add to `BUMP_BOTS_INFO` (`ID: ("name", default_delay)`), `BUMP_BOTS`, `DEFAULT_GUILD_CONFIG["bot_delay"]` and `["timestamps"]`, `SUCCESS_KEYWORDS` (if distinct), and `BUMP_BOTS_CHOICES` for the slash-command UI.
-
-### Database schema changes
-Add fields to `GuildConfig` / `DEFAULT_GUILD_CONFIG`; additive changes need no migration (defaults fill in via `from_dict`). For breaking changes, write a migration using the collection manager.
-
-### Debugging message detection
-Watch `[extract_all_text]`, `[on_message]`, `[on_message_edit]`, `[on_raw_message_edit]` log entries to see which listener fired and the normalized text.
+- **Add a cog**: drop a file with `async def setup(bot)` into `commands/`, `admin/`, or `Features/`. Managers come from `bot.<name>` - never re-instantiate.
+- **Add a bump bot**: extend `BUMP_BOTS_INFO`, `BUMP_BOTS`, `DEFAULT_GUILD_CONFIG` delays/timestamps, `SUCCESS_KEYWORDS`, `BUMP_BOTS_CHOICES` in `sub_systems/bump_config.py`.
+- **Schema changes**: additive `GuildConfig` fields need no migration (`from_dict` fills defaults). Guild config + bump timestamps are LIVE production data - migrate, never drop.
+- **Engine changes**: edit the master in `EmpireSystems/`, re-run the sync tool with `--bot reminder`, verify `--check`.
+- **Debugging detection**: watch `[on_message]` / `[on_message_edit]` / `[extract_all_text]` log lines.
 
 ## Important Notes
 
-- **TimerHandler singleton**: exactly one instance at `bot.timer_handler` (created in `attach_databases()`).
-- **WeBump**: sends empty messages then edits ~1s later — handled by force-refetch on edit + raw gateway parsing.
-- **Health ports**: bot 50014, dashboard 54014 (Reminder = bot index 14 in `portsRules.md`; siblings: Codex 50010/54010, Host 50011/54011).
-- **MongoDB conventions**: guild IDs stored as strings (`_id`); timestamps as integer Unix seconds; nested updates via dot notation (`timestamps.disboard_timestamp`); dynamic fields prefixed `timer_message_{channel_id}`.
+- **TimerHandler singleton**: exactly one instance at `bot.timer_handler`.
+- **Crash recovery**: `Features/start_up.py` reschedules all timers on ready (remaining = `end_time - now`; expired-while-offline fire immediately); `replace_if_sooner_than` makes re-runs safe.
+- **Health ports**: bot 50014, dashboard 54014 (`portsRules.md` index 14). Health follows the HealthCheck contract: DB down -> 503 `unhealthy`; Discord disconnected -> 200 `degraded`; never leak internals.
+- **MongoDB conventions**: guild IDs as strings (`_id`); timestamps as integer Unix seconds; nested updates via dot notation; surgical `$set` only.
+- **Never edit VENDORED-banner files in this repo**; always pass `--bot reminder` to sync tools.
 
 ### Environment Variables
 
-Required (bot): `DISCORD_TOKEN` (or `TOKEN`), `MONGO_URI` (bot data).
-Dashboard: `GATEKEEPER_CLIENT_ID`, `GATEKEEPER_CLIENT_SECRET`, `GATEKEEPER_REDIRECT_URI`, `DASHBOARD_SECRET_KEY`, `SHARED_SESSIONS_URI` (shared login store), `DASHBOARD_HOST`, `DASHBOARD_PORT`, `ENVIRONMENT`. See `docker/.env`.
+Bot: `DISCORD_TOKEN` (or `TOKEN`), `MONGO_URI`.
+Dashboard: `GATEKEEPER_CLIENT_ID/SECRET`, `GATEKEEPER_REDIRECT_URI`, `DASHBOARD_SECRET_KEY`, `SHARED_SESSIONS_URI`, `DASHBOARD_HOST`, `DASHBOARD_PORT`, `ENVIRONMENT`, `BASE_URL`, optional `TRUSTED_PROXY_IPS`, `COOKIE_DOMAIN` (prod: `.eosofficial.club`).
+Premium: `PREMIUM_OWNER_IDS`, `PREMIUM_ADMIN_GUILD_IDS`, optional `PREMIUM_APPLICATION_ID` (+ `PREMIUM_LOG_CHANNEL_ID`, `PREMIUM_NOTIFY_OWNERS`, `PREMIUM_TEST_MODE`).
 
 ## Testing Locally
 
-1. Populate `docker/.env`, run `python Reminder.py`; confirm logs show DB init, all managers attached, cogs loaded (including `Features.idle`), commands synced, and the health server on port 50014.
-2. `curl http://localhost:50014/health` → `status: healthy`.
-3. `/admin panel` → **Core Setup** to set bump channel + role; trigger a real bump bot; verify `Timer started: {guild_id}:{channel_id}:bump:{bot_name}` in logs.
-4. Dashboard: `python -m dashboard.app`, then `curl http://localhost:54014/health`.
+1. `python Reminder.py`; confirm DB init, managers attached (incl. `premium_manager`, `idle_manager`), cogs loaded (incl. `admin.admin_cog`, `commands.premium.cog`), commands synced, health on 50014.
+2. `curl http://localhost:50014/health` -> `status: healthy` (stop Mongo -> HTTP 503 `unhealthy`).
+3. `/admin panel` -> Core Setup -> set bump channel + role; trigger a real bump; verify `Timer started: {guild_id}:{channel_id}:bump:{bot_name}`.
+4. `python -m dashboard.app`; `curl http://localhost:54014/health`.
+5. Sync-tool checks: all four `--check --bot reminder` green; dashboard `npm run build` passes.
