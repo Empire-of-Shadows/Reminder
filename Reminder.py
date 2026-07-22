@@ -8,7 +8,7 @@ Unified startup sequence (mirrors Ecom / TheHost / TheCodex):
     4. _async_main(): install signal handlers → init DatabaseManager → start health endpoint (50014)
     5. start_services(): bot.start raced against shutdown_event
     6. on_ready (idempotent via _init_done):
-       Database Attachment → Cog Loading → Command Sync → Status Setup → Timer Reschedule
+       Database Attachment → Cog Loading → Command Sync → Status Setup → Timer Reschedule → Background Tasks
     7. shutdown_handler(): health → background tasks (cancel + await) → bot → DB
 """
 
@@ -118,6 +118,15 @@ async def on_ready():
     except Exception as e:
         logger.error(f"❌ Error rescheduling timers on startup: {e}", exc_info=True)
 
+    try:
+        async with startup_phase("Background Tasks"):
+            idle = getattr(bot, "idle_manager", None)
+            if idle is not None:
+                idle.start_status_rotation()
+                logger.info("🎡 Idle presence rotation started")
+    except Exception as e:
+        logger.error(f"❌ Error starting background tasks: {e}", exc_info=True)
+
     log_startup_summary()
     logger.info("🎉 Bot is fully online and operational!")
 
@@ -168,6 +177,13 @@ async def shutdown_handler():
                 cancelled_tasks.append(task)
     except Exception as e:
         logger.error(f"❌ Error cancelling pending reminder batches: {e}")
+
+    try:
+        idle = getattr(bot, "idle_manager", None)
+        if idle is not None and hasattr(idle, "stop_status_rotation"):
+            idle.stop_status_rotation()
+    except Exception as e:
+        logger.error(f"❌ Error stopping idle rotation: {e}")
 
     if cancelled_tasks:
         try:
@@ -265,7 +281,13 @@ async def _async_main(shutdown_event: asyncio.Event):
         raise
 
     try:
-        initialize_health_server(port=HEALTH_PORT, bot=bot, db_manager=db_manager)
+        initialize_health_server(
+            port=HEALTH_PORT,
+            bot=bot,
+            db_manager=db_manager,
+            bot_name="ImperialReminder",
+            service="Bump Reminder Bot",
+        )
         logger.info("✅ Health check endpoint initialized")
     except Exception as e:
         logger.error(f"❌ Failed to start health endpoint: {e}")
