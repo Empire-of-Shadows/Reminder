@@ -67,8 +67,10 @@ async def me(session: dict = Depends(get_current_user)):
     candidate_ids = [
         g["id"] for g in session.get("guilds", []) if g["id"] in bot_guild_ids
     ][:_ADMIN_PROBE_LIMIT]
+    # Guild-list probe: session-snapshot MANAGE_GUILD is fine here (no live
+    # bot-token call per guild); access-gated routes verify live.
     results = await asyncio.gather(
-        *(resolve_panel_role(session, gid) for gid in candidate_ids),
+        *(resolve_panel_role(session, gid, verify_manage_live=False) for gid in candidate_ids),
         return_exceptions=True,
     )
     roles = [r for r in results if isinstance(r, str)]
@@ -166,8 +168,9 @@ async def guilds(session: dict = Depends(get_current_user)):
     )
 
     probe_targets = [gid for gid in ids if gid in bot_guild_ids]
+    # Guild-list probe: session-snapshot MANAGE_GUILD (see /me note above).
     role_results = await asyncio.gather(
-        *(resolve_panel_role(session, gid) for gid in probe_targets),
+        *(resolve_panel_role(session, gid, verify_manage_live=False) for gid in probe_targets),
         return_exceptions=True,
     )
     panel_roles = {

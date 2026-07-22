@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, fetchPublicStats, inviteLink, type PublicStats } from "../api/client";
 import type { User, Guild, GuildBumpStats } from "../api/types";
-import { formatError } from "../utils/formatError";
+import { formatError } from "../_engine/api/formatError";
 import AppHeader from "../components/AppHeader";
 import PageSkeleton from "../components/PageSkeleton";
 import BumpStatusGrid from "../components/BumpStatusGrid";

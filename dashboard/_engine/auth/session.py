@@ -1,6 +1,11 @@
-"""Session CRUD for the shared WebSessions.SharedSessions collection (SSO).
+# VENDORED from dashboard_engine/ - DO NOT EDIT HERE.
+# Edit the master at EmpireSystems/dashboard_engine/ and run:
+#     python EmpireSystems/tools/sync_dashboard_engine.py
+# Drift is enforced by:
+#     python EmpireSystems/tools/sync_dashboard_engine.py --check
+"""Session CRUD for the shared SharedSessions collection (cross-bot SSO).
 
-Schema (shared across Host/Codex/Ecom/ImperialReminder/TheDecree + main site):
+Schema (shared across every EoS dashboard + main site):
     token            opaque random Mongo lookup id (token_urlsafe(48))
     user_id          Discord user id (string)
     user_data        Discord /users/@me payload
@@ -9,12 +14,14 @@ Schema (shared across Host/Codex/Ecom/ImperialReminder/TheDecree + main site):
     refresh_token    OAuth refresh token (rotates on each refresh)
     token_expires_at when the access token expires (UTC datetime, may be None)
     guilds_fetched_at, created_at, last_accessed, expires_at  (UTC datetimes)
+    csrf_token       per-session CSRF token (lazy-initialized)
     schema_version   2
 """
 
 import asyncio
+import logging
 import secrets
-from collections import defaultdict
+from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -27,22 +34,43 @@ from dashboard.config import (
     DISCORD_API_BASE,
     SESSION_MAX_AGE_DAYS,
 )
-from storage.log import get_logger
 
-logger = get_logger("dashboard.auth.session")
+logger = logging.getLogger(__name__)
 
 SESSION_SCHEMA_VERSION = 2
 
-# How long a session's cached guild list is trusted before a transparent refresh
-# from Discord (/users/@me/guilds), so the SSO snapshot self-heals without re-login.
+# How long a session's cached guild list is trusted before a transparent refresh.
 GUILDS_REFRESH_TTL_SECONDS = 300
 
 _TOKEN_URL = f"{DISCORD_API_BASE}/oauth2/token"
 _HTTP_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
 
 # Single-flight locks per session token so concurrent requests don't stampede
-# Discord with duplicate refreshes.
-_refresh_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+# Discord. Bounded LRU: a token seen once would otherwise leave a Lock in memory
+# for the process lifetime. Evicting an *idle* lock is safe -- a lock only needs
+# to exist for the brief refresh window; worst case after eviction is a rare
+# duplicate refresh (the pre-lock behavior).
+_MAX_REFRESH_LOCKS = 2048
+_refresh_locks: "OrderedDict[str, asyncio.Lock]" = OrderedDict()
+
+
+def _get_refresh_lock(token: str) -> asyncio.Lock:
+    """Return this token's single-flight lock, creating it on first use and
+    evicting the oldest idle locks once over the cap."""
+    lock = _refresh_locks.get(token)
+    if lock is None:
+        lock = asyncio.Lock()
+        _refresh_locks[token] = lock
+    else:
+        _refresh_locks.move_to_end(token)
+    # Evict oldest-idle locks when over the cap. Never evict a held lock.
+    while len(_refresh_locks) > _MAX_REFRESH_LOCKS:
+        old_token, old_lock = next(iter(_refresh_locks.items()))
+        if old_lock.locked():
+            _refresh_locks.move_to_end(old_token)
+            break
+        _refresh_locks.pop(old_token, None)
+    return lock
 
 
 async def create_session(
@@ -52,7 +80,6 @@ async def create_session(
     refresh_token: str | None = None,
     expires_in: int | None = None,
 ) -> str:
-    """Create a new session and return the opaque session token."""
     token = secrets.token_urlsafe(48)
     now = datetime.now(timezone.utc)
     token_expires_at = now + timedelta(seconds=int(expires_in)) if expires_in else None
@@ -71,7 +98,6 @@ async def create_session(
         "schema_version": SESSION_SCHEMA_VERSION,
     }
     await db.shared_sessions().insert_one(doc)
-    logger.info("Session created user=%s expires=%s", user_data.get("id"), doc["expires_at"].isoformat())
     return token
 
 
@@ -87,7 +113,6 @@ async def get_session(token: str) -> dict[str, Any] | None:
     if expires_at < now:
         await delete_session(token)
         return None
-    # Sliding expiration: refresh expires_at + last_accessed on every hit.
     new_expires = now + timedelta(days=SESSION_MAX_AGE_DAYS)
     await db.shared_sessions().update_one(
         {"token": token},
@@ -99,11 +124,8 @@ async def get_session(token: str) -> dict[str, Any] | None:
 
 
 async def delete_session(token: str):
-    """Delete a session by token."""
     await db.shared_sessions().delete_one({"token": token})
-
-
-# --- Guild-list refresh (keeps the SSO snapshot self-healing) ----------------
+    _refresh_locks.pop(token, None)
 
 
 def _as_utc(dt: datetime | None) -> datetime | None:
@@ -120,10 +142,6 @@ def _is_stale(fetched_at: datetime | None, ttl: int = GUILDS_REFRESH_TTL_SECONDS
 
 
 async def _refresh_access_token(refresh_token: str) -> dict | None:
-    """Exchange a refresh token for a fresh access token (GateKeeper creds).
-
-    Returns the token payload, or None on failure (e.g. the user revoked the app).
-    """
     try:
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
             resp = await client.post(
@@ -146,8 +164,6 @@ async def _refresh_access_token(refresh_token: str) -> dict | None:
 
 
 async def _backoff(token: str, session: dict, updates: dict | None = None) -> dict:
-    """On a failed refresh, persist any token updates and push guilds_fetched_at
-    forward (retry in ~60s) so we don't hammer Discord on every request."""
     set_doc = dict(updates or {})
     set_doc["guilds_fetched_at"] = datetime.now(timezone.utc) - timedelta(
         seconds=GUILDS_REFRESH_TTL_SECONDS - 60
@@ -158,22 +174,14 @@ async def _backoff(token: str, session: dict, updates: dict | None = None) -> di
 
 
 async def refresh_guilds_if_stale(session: dict) -> dict:
-    """Best-effort refresh of the session's cached Discord guild list.
-
-    When the snapshot is older than ``GUILDS_REFRESH_TTL_SECONDS`` and the
-    session carries an OAuth access token, re-fetch ``/users/@me/guilds``
-    (refreshing the access token first if it expired). Every failure path falls
-    back to the cached snapshot — this never raises and never 500s a request.
-    """
+    """Best-effort refresh of the session's cached Discord guild list."""
     token = session.get("token")
-    # Legacy/token-less session (e.g. minted before this rollout): nothing to do.
     if not token or not session.get("access_token"):
         return session
     if not _is_stale(session.get("guilds_fetched_at")):
         return session
 
-    async with _refresh_locks[token]:
-        # Re-read under the lock — another request may have refreshed already.
+    async with _get_refresh_lock(token):
         latest = await db.shared_sessions().find_one({"token": token})
         if latest is None:
             return session
@@ -187,7 +195,6 @@ async def refresh_guilds_if_stale(session: dict) -> dict:
         token_expires_at = _as_utc(latest.get("token_expires_at"))
         updates: dict = {}
 
-        # Refresh the access token if it has expired.
         if access_token and token_expires_at and token_expires_at <= datetime.now(timezone.utc):
             if not refresh_token:
                 return await _backoff(token, session)
@@ -203,7 +210,6 @@ async def refresh_guilds_if_stale(session: dict) -> dict:
                     seconds=int(new_tokens["expires_in"])
                 )
 
-        # Fetch the current guild list.
         try:
             async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
                 resp = await client.get(
@@ -225,8 +231,6 @@ async def refresh_guilds_if_stale(session: dict) -> dict:
         return session
 
 
-# --- OAuth state (Mongo-backed with TTL) -------------------------------------
-
 OAUTH_STATE_TTL_SECONDS = 600
 
 
@@ -240,7 +244,8 @@ async def ensure_oauth_state_ttl_index() -> None:
 
 
 async def ensure_session_ttl_index() -> None:
-    """Create TTL index on WebSessions.SharedSessions.expires_at."""
+    """Create TTL index on WebSessions.SharedSessions.expires_at so expired
+    sessions are reaped from the shared store even if no bot deletes them."""
     await db.shared_sessions().create_index(
         "expires_at",
         expireAfterSeconds=0,
@@ -249,7 +254,6 @@ async def ensure_session_ttl_index() -> None:
 
 
 async def store_oauth_state(state: str, redirect_url: str) -> None:
-    """Persist an OAuth state token bound to its post-login redirect URL."""
     await db.oauth_states().insert_one({
         "state": state,
         "redirect_url": redirect_url,

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, inviteLink } from "../api/client";
 import type { Guild, User } from "../api/types";
-import { formatError } from "../utils/formatError";
+import { formatError } from "../_engine/api/formatError";
 import AppHeader from "../components/AppHeader";
 import PageSkeleton from "../components/PageSkeleton";
 

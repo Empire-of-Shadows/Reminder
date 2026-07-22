@@ -1,3 +1,8 @@
+# VENDORED from dashboard_engine/ - DO NOT EDIT HERE.
+# Edit the master at EmpireSystems/dashboard_engine/ and run:
+#     python EmpireSystems/tools/sync_dashboard_engine.py
+# Drift is enforced by:
+#     python EmpireSystems/tools/sync_dashboard_engine.py --check
 """CSRF token management bound to the session document.
 
 A per-session CSRF token is lazily created and stored on the SharedSessions
@@ -9,16 +14,16 @@ request forgery even if an attacker can trick the browser into sending the
 session cookie.
 """
 
+import logging
 import secrets
 
 from fastapi import HTTPException, Request
 
 from dashboard import db
-from dashboard.auth.signing import unsign_token
+from dashboard._engine.auth.signing import unsign_token
 from dashboard.config import SESSION_COOKIE_NAME
-from storage.log import get_logger
 
-logger = get_logger("dashboard.auth.csrf")
+logger = logging.getLogger(__name__)
 
 
 def _raw_token(request: Request) -> str | None:

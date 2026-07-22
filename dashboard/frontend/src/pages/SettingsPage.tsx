@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { Channel, Role, BumpBot, GuildSettings } from "../api/types";
-import { formatError } from "../utils/formatError";
+import { formatError } from "../_engine/api/formatError";
 import AppHeader from "../components/AppHeader";
 import PageSkeleton from "../components/PageSkeleton";
 

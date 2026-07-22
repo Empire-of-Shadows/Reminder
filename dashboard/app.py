@@ -10,14 +10,14 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from dashboard import db
-from dashboard.auth.csrf import csrf_endpoint, csrf_middleware
-from dashboard.auth.session import (
+from dashboard._engine.auth.csrf import csrf_endpoint, csrf_middleware
+from dashboard._engine.auth.session import (
     ensure_oauth_state_ttl_index,
     ensure_session_ttl_index,
 )
 from dashboard.config import CORS_ORIGINS, IS_PRODUCTION
-from dashboard.rate_limit import rate_limit_middleware
-from dashboard.auth.oauth import router as auth_router
+from dashboard._engine.rate_limit import rate_limit_middleware
+from dashboard._engine.auth.oauth import router as auth_router
 from dashboard.routers.dashboard import router as dashboard_router
 from dashboard.routers.settings import router as settings_router
 from storage.log import get_logger

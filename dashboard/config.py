@@ -65,8 +65,36 @@ CORS_ORIGINS = [
     if o
 ]
 
-# Discord permission flag for MANAGE_GUILD
+# Reverse proxies whose X-Forwarded-For header may be trusted for client-IP
+# resolution (rate limiting). Comma-separated peer IPs; when the immediate
+# peer is not listed, the socket address is used instead so a client cannot
+# spoof a fresh rate-limit bucket per request.
+TRUSTED_PROXY_IPS = frozenset(
+    ip.strip()
+    for ip in os.getenv("TRUSTED_PROXY_IPS", "").split(",")
+    if ip.strip()
+)
+
+# Discord permission flags
 MANAGE_GUILD_PERMISSION = 0x20
+ADMINISTRATOR_PERMISSION = 0x8
+
+# ── Shared dashboard-engine seam values (read by dashboard/_engine/) ──────────
+# OAuth redirect allowlist (regex, anchored ^...$) + fallback, used by _engine/auth/oauth.py.
+OAUTH_REDIRECT_ALLOWLIST = r"^https?://(localhost(:\d+)?|([a-z0-9-]+\.)?eosofficial\.club)(/.*)?$"
+OAUTH_DEFAULT_REDIRECT = "/dashboard"
+
+# Rate-limit route table for _engine/rate_limit.py: (path-prefix, bucket, max, window_s).
+# First match wins, so specific prefixes precede their parents. bot-invite-url is
+# unauthenticated and triggers bot-token Discord calls on cache miss, so it gets
+# its own bucket.
+RATE_LIMITS: list[tuple[str, str, int, int]] = [
+    ("/auth/discord/callback", "oauth_callback", 10, 60),
+    ("/auth/discord", "oauth_start", 20, 60),
+    ("/api/me", "me", 100, 60),
+    ("/api/stats/public", "public_stats", 30, 60),
+    ("/api/bot-invite-url", "bot_invite", 30, 60),
+]
 
 
 def _validate_config() -> None:
