@@ -20,7 +20,7 @@ from dashboard.rate_limit import rate_limit_middleware
 from dashboard.auth.oauth import router as auth_router
 from dashboard.routers.dashboard import router as dashboard_router
 from dashboard.routers.settings import router as settings_router
-from storage.logging import get_logger
+from storage.log import get_logger
 
 startup_logger = get_logger("dashboard.startup")
 health_logger = get_logger("dashboard.health")

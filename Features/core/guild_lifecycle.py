@@ -5,7 +5,7 @@ from typing import Optional
 import discord
 from discord.ext import commands
 
-from storage.logging import get_logger
+from storage.log import get_logger
 
 logger = get_logger("GuildLifecycle")
 
@@ -28,10 +28,6 @@ class GuildLifecycleManager(commands.Cog):
                 logger.info(f"Synced commands to {guild.name}")
             except Exception as e:
                 logger.warning(f"Failed to sync commands to {guild.name}: {e}")
-
-            # Cache guild
-            if hasattr(self.bot, "cache_manager"):
-                await self.bot.cache_manager.cache_all(guild)
 
         except Exception as e:
             logger.error(f"Error on_guild_join for {guild.name}: {e}", exc_info=True)

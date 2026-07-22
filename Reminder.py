@@ -32,14 +32,14 @@ load_dotenv(_env_dir / ".env.local", override=True)
 import discord
 
 from startup.bot import bot, TOKEN, s  # noqa: E402,F401
-from storage.logging import get_logger, setup_application_logging  # noqa: E402
+from storage.log import get_logger, setup_application_logging  # noqa: E402
 from startup.sync import load_cogs, attach_databases, log_all_commands  # noqa: E402
 from startup.phases import (  # noqa: E402
     log_startup_summary,
     startup_phase,
 )
 from health_endpoint import initialize_health_server, stop_health_server  # noqa: E402
-from storage.manager import db_manager  # noqa: E402
+from storage.settings.collections import db_manager  # noqa: E402
 
 # Initialize application-wide logging
 APPLICATION_NAME = "discord-bot-reminder"

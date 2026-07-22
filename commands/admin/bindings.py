@@ -22,7 +22,7 @@ import discord
 
 from storage.config_manager import get_guild_config_manager
 from storage.audit_log import get_audit_log_manager
-from storage.logging import get_logger
+from storage.log import get_logger
 
 # Re-export the static branding text the engine reads by name.
 from .panel_branding import OVERVIEW_FOOTER, SETUP_GUIDE_TEXT
@@ -101,8 +101,7 @@ def invalidate_caches(guild_id: int) -> None:
         from storage import config_manager as _cm_mod
         mgr = _cm_mod._guild_config_manager
         if mgr:
-            mgr._cache.pop(int(guild_id), None)
-            mgr._cache_checked.pop(int(guild_id), None)
+            mgr.invalidate(int(guild_id))
     except Exception as e:  # best-effort: never block a save
         logger.debug(f"invalidate_caches skipped for {guild_id}: {e}")
 

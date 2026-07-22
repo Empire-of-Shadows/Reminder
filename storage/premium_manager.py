@@ -2,7 +2,7 @@ import asyncio
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
-from storage.logging import get_logger
+from storage.log import get_logger
 
 logger = get_logger("PremiumManager")
 

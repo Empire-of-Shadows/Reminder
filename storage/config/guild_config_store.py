@@ -1,16 +1,16 @@
-# ───────────────────────────────────────────────────────────────────────────
-# VENDORED from storage_engine/ — DO NOT EDIT HERE.
+# ---------------------------------------------------------------------------
+# VENDORED from storage_engine/ - DO NOT EDIT HERE.
 # Edit the master at <repo-root>/EmpireSystems/storage_engine/ and run:
 #     python tools/sync_storage_engine.py
 # Drift is enforced by:  python tools/sync_storage_engine.py --check
-# ───────────────────────────────────────────────────────────────────────────
-"""GuildConfigStore — the shared, dict-level guild configuration store.
+# ---------------------------------------------------------------------------
+"""GuildConfigStore - the shared, dict-level guild configuration store.
 
 Generalized from EcomRebuild ``storage/config_manager.py``. This is the *engine* half:
 it standardizes how a per-guild config document is read (hit-first), written (surgical
 dotted ``$set`` / ``$unset`` / full-doc upsert), and invalidated. It deliberately knows
-nothing about a bot's feature schema — the bot wraps it with its own ``GuildConfig``
-dataclass for typed access (see ``guild_config_reference.py``).
+nothing about a bot's feature schema - the bot wraps it with its own ``GuildConfig``
+dataclass for typed access (see ``docs/storage_engine/guild-config.md``).
 
 Caching & coherency are delegated to the ``CollectionManager`` it is constructed with:
 reads pass ``cache_key=f"guild:{gid}"`` so they share the manager's pluggable
@@ -151,6 +151,35 @@ class GuildConfigStore:
             logger.error(f"unset failed for guild {gid}: {e}", exc_info=True)
             return False
 
+    async def apply(
+        self,
+        guild_id: Any,
+        sets: Optional[Dict[str, Any]] = None,
+        unsets: Optional[List[str]] = None,
+        upsert: bool = False,
+    ) -> bool:
+        """Apply a surgical ``$set`` plus ``$unset`` in ONE atomic ``update_one``.
+
+        Built for typed config layers that diff a load-time snapshot against the edited
+        state (the BUG-C1 pattern): the changed leaves land as dotted ``$set`` and the
+        removed leaves as ``$unset`` in a single operation, so no concurrent write can
+        slip between the two halves and the save stays surgical. ``updated_at`` is
+        stamped by the ``CollectionManager``. Returns True when there is nothing to
+        write (an empty diff is a successful no-op, not an error)."""
+        gid = self._gid(guild_id)
+        update: Dict[str, Any] = {}
+        if sets:
+            update["$set"] = dict(sets)
+        if unsets:
+            update["$unset"] = {k: "" for k in unsets}
+        if not update:
+            return True
+        try:
+            return await self._mgr.update_one({self._id_field: gid}, update, upsert=upsert)
+        except Exception as e:
+            logger.error(f"apply failed for guild {gid}: {e}", exc_info=True)
+            return False
+
     async def save_doc(self, guild_id: Any, doc: Dict[str, Any]) -> bool:
         """Full-document upsert. The ``id_field`` and managed timestamps are handled for
         you (``created_at`` / ``updated_at`` are dropped so the manager owns them)."""
@@ -177,40 +206,53 @@ class GuildConfigStore:
     # ── canonical panel roles (admin_engine contract shape) ──────────────────
 
     @staticmethod
-    def _normalize_roles(doc: Dict[str, Any], path: str, legacy_singular: str) -> List[int]:
-        """Fold ``roles.{admin,mod}_role_ids`` with legacy singular fallback into a list."""
+    def _normalize_roles(doc: Dict[str, Any], path: str) -> List[int]:
+        """Fold ``roles.{admin,mod}_role_ids`` into an int list."""
         ids = GuildConfigStore._dig(doc, path)
-        if ids is None:
-            singular = doc.get(legacy_singular)
-            ids = [singular] if singular is not None else []
         return [int(r) for r in (ids or [])]
 
     async def get_admin_role_ids(self, guild_id: Any) -> List[int]:
-        """Resolve the guild's admin panel-role ids (canonical shape, legacy-tolerant)."""
-        return self._normalize_roles(await self.get_settings(guild_id), _ADMIN_ROLES_PATH, "admin_role_id")
+        """Resolve the guild's admin panel-role ids (canonical shape)."""
+        return self._normalize_roles(await self.get_settings(guild_id), _ADMIN_ROLES_PATH)
 
     async def get_mod_role_ids(self, guild_id: Any) -> List[int]:
-        """Resolve the guild's mod panel-role ids (canonical shape, legacy-tolerant)."""
-        return self._normalize_roles(await self.get_settings(guild_id), _MOD_ROLES_PATH, "mod_role_id")
+        """Resolve the guild's mod panel-role ids (canonical shape)."""
+        return self._normalize_roles(await self.get_settings(guild_id), _MOD_ROLES_PATH)
 
     async def add_role(self, guild_id: Any, kind: str, role_id: int) -> bool:
-        """Add a role id to the ``admin`` or ``mod`` canonical list (idempotent)."""
+        """Add a role id to the ``admin`` or ``mod`` canonical list (idempotent).
+
+        Atomic ``$addToSet`` instead of read-modify-write, so two concurrent adds
+        can't read the same list and clobber each other (lost update). Role ids are
+        stored in the canonical STRING form (readers coerce as needed)."""
         path = _ADMIN_ROLES_PATH if kind == "admin" else _MOD_ROLES_PATH
-        current = await (self.get_admin_role_ids(guild_id) if kind == "admin"
-                         else self.get_mod_role_ids(guild_id))
-        if int(role_id) in current:
+        gid = self._gid(guild_id)
+        try:
+            await self._mgr.update_one(
+                {self._id_field: gid}, {"$addToSet": {path: str(role_id)}}, upsert=True
+            )
             return True
-        return await self.update(guild_id, {path: current + [int(role_id)]})
+        except Exception as e:
+            logger.error(f"add_role failed for guild {gid}: {e}", exc_info=True)
+            return False
 
     async def remove_role(self, guild_id: Any, kind: str, role_id: int) -> bool:
-        """Remove a role id from the ``admin`` or ``mod`` canonical list."""
+        """Remove a role id from the ``admin`` or ``mod`` canonical list.
+
+        Atomic ``$pull`` instead of read-modify-write. Pulls BOTH the string and int
+        forms so a not-yet-normalized legacy element is still removable."""
         path = _ADMIN_ROLES_PATH if kind == "admin" else _MOD_ROLES_PATH
-        current = await (self.get_admin_role_ids(guild_id) if kind == "admin"
-                         else self.get_mod_role_ids(guild_id))
-        new = [r for r in current if r != int(role_id)]
-        if new == current:
+        gid = self._gid(guild_id)
+        try:
+            await self._mgr.update_one(
+                {self._id_field: gid},
+                {"$pull": {path: {"$in": [str(role_id), int(role_id)]}}},
+                upsert=False,
+            )
             return True
-        return await self.update(guild_id, {path: new})
+        except Exception as e:
+            logger.error(f"remove_role failed for guild {gid}: {e}", exc_info=True)
+            return False
 
     # ── cache control ────────────────────────────────────────────────────────
 

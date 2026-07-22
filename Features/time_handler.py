@@ -3,7 +3,7 @@ from typing import Callable, Dict, Optional, Any, List, Tuple
 import time
 import random
 from dataclasses import dataclass, asdict
-from storage.logging import get_logger
+from storage.log import get_logger
 
 logger = get_logger("TimeHandler")
 

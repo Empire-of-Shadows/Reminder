@@ -11,7 +11,7 @@ Two independent connections (matching TheHost / TheCodex):
 from pymongo import AsyncMongoClient
 
 from dashboard.config import SHARED_SESSIONS_URI
-from storage.manager import db_manager
+from storage.settings.collections import db_manager
 
 _shared_client: AsyncMongoClient | None = None
 

@@ -28,8 +28,8 @@ from fastapi import Depends, HTTPException
 
 from dashboard.auth.dependencies import get_current_user
 from dashboard.config import BOT_TOKEN, DISCORD_API_BASE, MANAGE_GUILD_PERMISSION
-from storage.manager import db_manager
-from storage.logging import get_logger
+from storage.settings.collections import db_manager
+from storage.log import get_logger
 
 logger = get_logger("dashboard.auth.panel_role")
 

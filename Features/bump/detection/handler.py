@@ -15,7 +15,7 @@ from storage.sub_systems.bump_config import (
     BUMPIT_SUCCESS_KEYWORD, ONE, BUMP_BOTS, WEBUMP_ID, WEBUMP_SUCCESS,
     SUCCESS_KEYWORDS, BUMP_BOTS_INFO
 )
-from storage.logging import get_logger
+from storage.log import get_logger
 
 logger = get_logger("BumpHandler")
 

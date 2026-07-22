@@ -10,14 +10,12 @@ TOKEN = os.getenv("DISCORD_TOKEN") or os.getenv("TOKEN")
 
 # Configure Discord intents - deliberately lean: guilds for the guild/channel
 # cache, guild_messages + message_content for bump-success detection (the bot
-# reads other bots' messages/embeds in the configured bump channel). members is
-# kept only for the guild snapshot cache and is removed with it in the storage
-# migration.
+# reads other bots' messages/embeds in the configured bump channel). No
+# privileged members/presences intents - nothing consumes them.
 intents = discord.Intents.none()
 intents.guilds = True
 intents.guild_messages = True
 intents.message_content = True
-intents.members = True
 
 # Initialize bot instance. Slash-only (ecosystem convention): no text prefix,
 # the bot only responds to application commands / mentions. AllowedMentions is

@@ -25,7 +25,7 @@ from dashboard.config import (
     SESSION_COOKIE_NAME,
     SESSION_MAX_AGE_DAYS,
 )
-from storage.logging import get_logger
+from storage.log import get_logger
 
 logger = get_logger("dashboard.auth.oauth")
 

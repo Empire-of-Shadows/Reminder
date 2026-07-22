@@ -150,7 +150,7 @@ def _premium_status_text(guild_id: int) -> str:
     try:
         from storage import config_manager as _cm_mod
         mgr = _cm_mod._guild_config_manager
-        cfg = mgr._cache.get(guild_id) if mgr else None
+        cfg = mgr.peek(guild_id) if mgr else None
     except Exception:
         cfg = None
 

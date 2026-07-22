@@ -1,10 +1,10 @@
-# ───────────────────────────────────────────────────────────────────────────
-# VENDORED from storage_engine/ — DO NOT EDIT HERE.
+# ---------------------------------------------------------------------------
+# VENDORED from storage_engine/ - DO NOT EDIT HERE.
 # Edit the master at <repo-root>/EmpireSystems/storage_engine/ and run:
 #     python tools/sync_storage_engine.py
 # Drift is enforced by:  python tools/sync_storage_engine.py --check
-# ───────────────────────────────────────────────────────────────────────────
-"""UserPreferenceCache — cached per-user preference / opt-out lookup.
+# ---------------------------------------------------------------------------
+"""UserPreferenceCache - cached per-user preference / opt-out lookup.
 
 Capability: cached user-preference flags. Promoted from TheHost's ``user_privacy`` module: a
 short-TTL, per-user cache of boolean flags (privacy / leaderboard opt-out) so hot write paths

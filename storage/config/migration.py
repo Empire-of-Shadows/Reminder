@@ -1,9 +1,9 @@
-# ───────────────────────────────────────────────────────────────────────────
-# VENDORED from storage_engine/ — DO NOT EDIT HERE.
+# ---------------------------------------------------------------------------
+# VENDORED from storage_engine/ - DO NOT EDIT HERE.
 # Edit the master at <repo-root>/EmpireSystems/storage_engine/ and run:
 #     python tools/sync_storage_engine.py
 # Drift is enforced by:  python tools/sync_storage_engine.py --check
-# ───────────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
 """One-time data migrations for the Guild Configuration Engine.
 
 The engine standardizes ``guild_id`` to ``str`` everywhere. Bots that previously stored
@@ -30,7 +30,7 @@ async def normalize_guild_id_to_str(
     """Rewrite int ``id_field`` values to ``str`` across one collection.
 
     Returns a summary ``{"scanned", "converted", "conflicts"}``. A "conflict" is a doc
-    whose stringified id already exists as a separate ``str`` document — those are left
+    whose stringified id already exists as a separate ``str`` document - those are left
     untouched and reported so an operator can merge them deliberately rather than the
     migration silently clobbering data.
     """

@@ -27,7 +27,7 @@ from dashboard.config import (
     DISCORD_API_BASE,
     SESSION_MAX_AGE_DAYS,
 )
-from storage.logging import get_logger
+from storage.log import get_logger
 
 logger = get_logger("dashboard.auth.session")
 

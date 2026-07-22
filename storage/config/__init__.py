@@ -1,17 +1,17 @@
-# ───────────────────────────────────────────────────────────────────────────
-# VENDORED from storage_engine/ — DO NOT EDIT HERE.
+# ---------------------------------------------------------------------------
+# VENDORED from storage_engine/ - DO NOT EDIT HERE.
 # Edit the master at <repo-root>/EmpireSystems/storage_engine/ and run:
 #     python tools/sync_storage_engine.py
 # Drift is enforced by:  python tools/sync_storage_engine.py --check
-# ───────────────────────────────────────────────────────────────────────────
-"""storage_engine.config — the shared Guild Configuration Engine.
+# ---------------------------------------------------------------------------
+"""storage_engine.config - the shared Guild Configuration Engine.
 
 A dict-level, guild-scoped config store generalized from EcomRebuild's
 ``storage/config_manager.py`` (the most advanced sibling: dotted-path ``update``,
 ``_extra`` catch-all, change-stream coherency). The engine standardizes *persistence,
 caching, and CRUD* around a guild config document; the bot keeps its own typed
-``GuildConfig`` dataclass, feature layout, and schema-version migration — those stay
-bot-owned (see ``guild_config_reference.py``).
+``GuildConfig`` dataclass, feature layout, and schema-version migration - those stay
+bot-owned (see ``docs/storage_engine/guild-config.md``).
 
 ``GuildConfigStore`` reads hit-first through the ``CollectionManager`` it is given, so
 it shares the manager's pluggable cache and the engine's ``ChangeStreamWatcher`` (list

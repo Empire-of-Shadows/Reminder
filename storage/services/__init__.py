@@ -1,10 +1,10 @@
-# ───────────────────────────────────────────────────────────────────────────
-# VENDORED from storage_engine/ — DO NOT EDIT HERE.
+# ---------------------------------------------------------------------------
+# VENDORED from storage_engine/ - DO NOT EDIT HERE.
 # Edit the master at <repo-root>/EmpireSystems/storage_engine/ and run:
 #     python tools/sync_storage_engine.py
 # Drift is enforced by:  python tools/sync_storage_engine.py --check
-# ───────────────────────────────────────────────────────────────────────────
-"""storage_engine.services — generic, config-driven storage capabilities.
+# ---------------------------------------------------------------------------
+"""storage_engine.services - generic, config-driven storage capabilities.
 
 Reusable storage managers promoted from code that was duplicated across bots, made
 bot-agnostic by injecting collection keys / field maps / TTLs / predicates instead of
@@ -18,7 +18,7 @@ data, not code.
 | Single-instance advisory lock | ``SingletonLock`` | TheHost ``storage/instance_lock.py`` |
 | User preference / opt-out cache | ``UserPreferenceCache`` | TheHost ``storage/user_privacy.py`` |
 
-These deliberately carry NO discord dependency — discord-facing UI (embeds, permission checks)
+These deliberately carry NO discord dependency - discord-facing UI (embeds, permission checks)
 stays in the bot. ``grep "Capability:"`` across the engine to discover the full surface.
 """
 

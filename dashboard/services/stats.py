@@ -12,7 +12,7 @@ unit of aggregation is the guild rather than the user).
 import time
 
 from storage.config_manager import GuildConfig
-from storage.manager import db_manager
+from storage.settings.collections import db_manager
 from storage.sub_systems.bump_config import BOT_DISPLAY_NAMES, BUMP_BOTS
 
 _CONFIG_COLLECTION = "settings_guild_data"

@@ -18,7 +18,7 @@ import discord
 from tabulate import tabulate
 
 from startup.bot import bot, s
-from storage.logging import get_logger
+from storage.log import get_logger
 
 logger = get_logger("Sync")
 
@@ -156,7 +156,7 @@ async def attach_databases():
 
     try:
         # Initialize DatabaseManager first
-        from storage.manager import db_manager
+        from storage.settings.collections import db_manager
         try:
             await db_manager.initialize()
             result, is_success = await attach_attribute("db_manager", db_manager)
@@ -164,16 +164,6 @@ async def attach_databases():
         except Exception as db_error:
             failed_logs.append(f"{s}❌ db_manager → Error: {db_error}\n")
             raise  # Can't continue without db_manager
-
-        # Cache manager (bot-owned seam; renamed from storage/cache.py so it no longer
-        # collides with the vendored storage/cache/ package, which wins import resolution).
-        from storage.guild_cache import create_cache_manager
-        try:
-            cache_manager = create_cache_manager(db_manager)
-            result, is_success = await attach_attribute("cache_manager", cache_manager)
-            (success_logs if is_success else failed_logs).append(result)
-        except Exception as cache_error:
-            failed_logs.append(f"{s}❌ cache_manager → Error: {cache_error}\n")
 
         # Audit log manager
         from storage.audit_log import get_audit_log_manager

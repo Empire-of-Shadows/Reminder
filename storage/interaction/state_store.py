@@ -1,10 +1,10 @@
-# ───────────────────────────────────────────────────────────────────────────
-# VENDORED from storage_engine/ — DO NOT EDIT HERE.
+# ---------------------------------------------------------------------------
+# VENDORED from storage_engine/ - DO NOT EDIT HERE.
 # Edit the master at <repo-root>/EmpireSystems/storage_engine/ and run:
 #     python tools/sync_storage_engine.py
 # Drift is enforced by:  python tools/sync_storage_engine.py --check
-# ───────────────────────────────────────────────────────────────────────────
-"""InteractionStateStore — map a Discord message to its feature context.
+# ---------------------------------------------------------------------------
+"""InteractionStateStore - map a Discord message to its feature context.
 
 A single polymorphic collection replaces the per-feature ``message_id → context`` maps that
 recur across the bots. Each record is::
@@ -12,12 +12,12 @@ recur across the bots. Each record is::
     {message_id, guild_id, feature, context: {...}, created_at, expires_at}
 
 * ``record`` upserts the mapping (optionally with a TTL).
-* ``get_context`` is the hot path — button handlers call it on every click, so it reads
+* ``get_context`` is the hot path - button handlers call it on every click, so it reads
   hit-first through the manager's shared cache.
 * ``iter_active`` lets a cog re-register persistent views on startup (``bot.add_view``).
 
 Expiry is delegated to a **TTL index on ``expires_at``** that the bot declares on the
-collection (see ``interaction_state_reference.py``); MongoDB reaps stale rows, replacing the
+collection (see ``docs/storage_engine/interaction-state.md``); MongoDB reaps stale rows, replacing the
 per-feature cleanup tasks (e.g. TheCodex ``cleanup_old_mappings``). ``guild_id`` and
 ``message_id`` are normalized to ``str``.
 """
@@ -77,7 +77,9 @@ class InteractionStateStore:
         mid = self._mid(message_id)
         effective_ttl = self._default_ttl if ttl is ... else ttl
         now = datetime.now(tz=timezone.utc)
-        expires_at = now + timedelta(seconds=effective_ttl) if effective_ttl else None
+        # Only ``None`` means never-expire; ``ttl=0`` must expire immediately
+        # (``if effective_ttl`` would have treated 0 as falsy -> never-expire).
+        expires_at = now + timedelta(seconds=effective_ttl) if effective_ttl is not None else None
 
         update = {
             "$set": {
@@ -115,7 +117,7 @@ class InteractionStateStore:
         return await self._mgr.find_many(query)
 
     async def iter_active(self, feature: str, guild_id: Any = None) -> AsyncIterator[Dict[str, Any]]:
-        """Yield active records for a feature — use at startup to re-register persistent
+        """Yield active records for a feature - use at startup to re-register persistent
         views (``bot.add_view``) so their buttons keep working after a restart."""
         for record in await self.find_by_feature(feature, guild_id):
             yield record
