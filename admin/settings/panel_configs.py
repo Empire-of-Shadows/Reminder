@@ -16,8 +16,8 @@ import discord
 from .panel_branding import PANEL_DESCRIPTION, PANEL_TITLE
 from ..views.panel_engine import PanelNode
 from ..actions.features import panel_roles_pair
+from ..actions.structure.info import info_action
 from storage.config_manager import get_guild_config_manager
-from storage.premium_manager import get_premium_manager
 from storage.sub_systems.bump_config import (
     BUMP_BOTS,
     BUMP_BOTS_CHOICES,
@@ -135,61 +135,31 @@ async def _set_timers_message(guild_id: int, values: list) -> bool:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Premium accessors
+# Premium status (engine entitlement state; staff-issued codes are retired)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _premium_status_text(guild_id: int) -> str:
-    """Sync status line for the Premium menu description.
-
-    Reads the GuildConfigManager's in-memory cache (warmed when the panel opens
-    and after activation via the post-save hook) since description_builder is
-    synchronous and cannot await a DB fetch.
-    """
-    base = (
-        "Premium features coming in the future\n\n"
+async def _render_premium_status(cog, guild, ctx) -> str:
+    """Live premium status from the engine PremiumManager's derived state."""
+    pm = getattr(cog.bot, "premium_manager", None)
+    if pm is None:
+        return "Premium status is unavailable right now - try again shortly."
+    state = await pm.get_guild_state(str(guild.id))
+    if state.is_premium:
+        expires = (
+            f"<t:{int(state.expires_at.timestamp())}:R>" if state.expires_at else "Never"
+        )
+        return (
+            "**Status:** ✅ Premium active\n"
+            f"**Tier:** {state.tier}\n"
+            f"**Expires:** {expires}"
+        )
+    return (
+        "**Status:** ❌ Not active\n\n"
+        "Premium unlocks custom reminder messages, webhook delivery, and shorter "
+        "reminder cooldowns on supported bump bots.\n"
+        "Check `/premium status` anytime; premium is granted by Empire of Shadows "
+        "staff."
     )
-    try:
-        from storage import config_manager as _cm_mod
-        mgr = _cm_mod._guild_config_manager
-        cfg = mgr.peek(guild_id) if mgr else None
-    except Exception:
-        cfg = None
-
-    if cfg and cfg.premium.get("enabled"):
-        by = cfg.premium.get("activated_by")
-        suffix = f" (activated by <@{by}>)" if by else ""
-        return base + f"**Status:** ✅ Premium active{suffix}"
-    return base + "**Status:** ❌ Not active. Enter a premium code below to activate."
-
-
-async def _activate_premium(guild_id: int, values: list) -> bool:
-    """Validate and link a premium code, then flip premium.enabled on.
-
-    The link itself is a conditional atomic update (unlinked + unexpired guard
-    in the Mongo filter), so one code can never be claimed by two guilds even
-    under concurrent redemption; premium.enabled is only set when the claim
-    actually matched.
-    """
-    code = (values[0] if values else "").strip()
-    if not code:
-        return False
-    pm = await get_premium_manager()
-    sub = await pm.get_code(code)
-    if not sub:
-        return False
-    claimed = await pm.link_code_to_guild(code, guild_id)
-    if not claimed:
-        return False  # expired, past expires_at, or already linked elsewhere
-    cm = await get_guild_config_manager()
-    await cm.set_value(guild_id, "premium.enabled", True)
-    return True
-
-
-async def _after_activate_premium(interaction, guild_id: int, values: list) -> None:
-    """Record who activated premium and warm the config cache for status display."""
-    cm = await get_guild_config_manager()
-    await cm.set_value(guild_id, "premium.activated_by", interaction.user.id)
-    await cm.get_config(guild_id)  # repopulate cache so the status line is fresh
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -379,21 +349,16 @@ PREMIUM_CONFIG = PanelNode(
     label="Premium",
     kind="menu",
     category_group="feature",
-    description_builder=_premium_status_text,
+    description=(
+        "Premium features for this server. Open **Premium Status** for the live "
+        "state, or use `/premium status`."
+    ),
     children={
-        "activate": PanelNode(
-            key="activate",
-            label="Activate Premium Code",
-            kind="modal_input",
-            description="Enter a premium code provided by staff to activate Premium.",
-            modal_title="Activate Premium",
-            modal_label="Premium Code",
-            modal_placeholder="Enter your code...",
-            modal_min_length=1,
-            modal_max_length=32,
-            modal_required=True,
-            set_values=_activate_premium,
-            post_save_hook=_after_activate_premium,
+        "status": info_action(
+            "premium_status",
+            label="Premium Status",
+            render=_render_premium_status,
+            description="Current premium state for this server.",
         ),
     },
 )

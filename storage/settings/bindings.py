@@ -3,7 +3,7 @@
 The single integration point between the vendored storage engine and this bot's
 environment. The seam imports these names; everything else under ``storage/`` (except
 this ``settings/`` package and the bot-owned domain modules ``config_manager.py``,
-``audit_log.py``, ``setup_gatekeeper.py``, ``premium_manager.py``, ``sub_systems/``)
+``audit_log.py``, ``setup_gatekeeper.py``, ``sub_systems/``)
 is vendored engine code - do not edit it there.
 
 Template: ``EmpireSystems/Settings/storage/bindings_reference.py``.

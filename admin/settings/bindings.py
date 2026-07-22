@@ -89,7 +89,17 @@ async def set_setting(key: str, value: Any, guild_id: int) -> None:
 # ── Premium ──────────────────────────────────────────────────────────────────────
 
 async def is_premium(guild_id: int) -> bool:
-    return bool(await config_get(guild_id, "premium.enabled", False))
+    """Engine entitlement state (bot.premium_manager); the legacy premium.enabled
+    config flag is retired and no longer written."""
+    from startup.bot import bot
+    pm = getattr(bot, "premium_manager", None)
+    if pm is None:
+        return False
+    try:
+        return await pm.is_premium_guild(str(guild_id))
+    except Exception as e:
+        logger.warning(f"is_premium check failed for {guild_id}: {e}")
+        return False
 
 
 # ── Cache invalidation ───────────────────────────────────────────────────────────

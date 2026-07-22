@@ -348,4 +348,5 @@ async def guild_bump_stats(guild_id: int, _session: dict = Depends(require_panel
     """Per-bot bump status for a guild (last bump, cooldown, next due, status)."""
     gcm = await get_guild_config_manager(db_manager)
     config = await gcm.get_config(guild_id)
-    return stats_service.guild_bump_stats(config)
+    premium = await stats_service.guild_is_premium(guild_id)
+    return stats_service.guild_bump_stats(config, premium=premium)

@@ -4,9 +4,9 @@ This one file declares ImperialReminder's collections AND constructs the shared
 ``db_manager`` the rest of the bot imports (``from storage.settings.collections import
 db_manager``). It replaces the old ``define_collections`` + ``database_properties`` +
 ``manager`` trio: the engine base builds its own per-collection accessor map
-(``db_manager.<registry_key>``) from the registry at construction, so the
-``settings_guild_data`` / ``premium_codes`` / ``premium_entitlements`` attribute
-accessors keep working with no properties file.
+(``db_manager.<registry_key>``) from the registry at construction, so attribute
+accessors like ``db_manager.settings_guild_data`` keep working with no properties
+file.
 
 Index shapes are carried over from the old ``define_collections.py`` and database names
 are preserved, so current data (live guild settings, bump timestamps) is reused with no
@@ -42,27 +42,30 @@ COLLECTIONS: dict[str, CollectionConfig] = {
             IndexModel([("premium.enabled", 1)], name="premium_enabled_idx"),
         ],
     ),
-    # Legacy premium (codes + entitlement cache). Retired in the premium
-    # consolidation phase in favor of the engine ``storage.premium`` collections;
-    # kept registered until then so the current admin-panel activation flow works.
-    "premium_codes": CollectionConfig(
-        name="codes",
+    # Entitlement-backed premium (engine ``storage.premium.PremiumManager``): raw
+    # ``entitlements`` records fold into the derived ``premium_state`` doc per scope,
+    # and reconcile health lives on ``bot_settings``. Indexes are owned by
+    # ``PremiumManager._ensure_indexes`` (raw client), so none are declared here;
+    # registering keeps the engine aware of the collections. The legacy
+    # ``codes`` / ``entitlements_cache`` collections are retired (drop them
+    # manually - premium data is rebuildable via manual grants).
+    "entitlements": CollectionConfig(
+        name="entitlements",
         database=REMINDER_DB,
         connection="primary",
-        indexes=[
-            IndexModel([("code", 1)], unique=True),
-            IndexModel([("linked_guild", 1)]),
-            IndexModel([("issued_to", 1)]),
-        ],
+        indexes=[],
     ),
-    "premium_entitlements": CollectionConfig(
-        name="entitlements_cache",
+    "premium_state": CollectionConfig(
+        name="premium_state",
         database=REMINDER_DB,
         connection="primary",
-        indexes=[
-            IndexModel([("user_id", 1)]),
-            IndexModel([("expires_at", 1)], expireAfterSeconds=0),  # TTL index
-        ],
+        indexes=[],
+    ),
+    "premium_bot_settings": CollectionConfig(
+        name="bot_settings",
+        database=REMINDER_DB,
+        connection="primary",
+        indexes=[],
     ),
     # Admin-panel audit trail (written by the engine AuditLog service via
     # storage/audit_log.py). Collection name matches the old hand-rolled writer so

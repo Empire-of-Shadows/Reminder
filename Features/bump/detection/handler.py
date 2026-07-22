@@ -264,7 +264,15 @@ class BumpHandler(commands.Cog):
 
         if reminders:
             config = await self.bot.guild_config_manager.get_config(channel.guild.id)
-            premium_enabled = config.premium.get("enabled", False)
+            # Premium comes from the engine entitlement state; the webhook URL is
+            # still guild config (a premium-gated delivery setting).
+            premium_enabled = False
+            pm = getattr(self.bot, "premium_manager", None)
+            if pm is not None:
+                try:
+                    premium_enabled = await pm.is_premium_guild(str(channel.guild.id))
+                except Exception as e:
+                    logger.warning(f"Premium check failed for {channel.guild.id}: {e}")
             webhook_url = config.premium.get("guild_webhook")
 
             bots = ", ".join(f"**{bot_name}**" for _, bot_name in reminders)
