@@ -162,7 +162,13 @@ def _premium_status_text(guild_id: int) -> str:
 
 
 async def _activate_premium(guild_id: int, values: list) -> bool:
-    """Validate and link a premium code, then flip premium.enabled on."""
+    """Validate and link a premium code, then flip premium.enabled on.
+
+    The link itself is a conditional atomic update (unlinked + unexpired guard
+    in the Mongo filter), so one code can never be claimed by two guilds even
+    under concurrent redemption; premium.enabled is only set when the claim
+    actually matched.
+    """
     code = (values[0] if values else "").strip()
     if not code:
         return False
@@ -170,12 +176,9 @@ async def _activate_premium(guild_id: int, values: list) -> bool:
     sub = await pm.get_code(code)
     if not sub:
         return False
-    if sub.get("expired"):
-        return False
-    linked = sub.get("linked_guild")
-    if linked not in (0, "0", None, ""):
-        return False  # already linked to a guild
-    await pm.link_code_to_guild(code, guild_id)
+    claimed = await pm.link_code_to_guild(code, guild_id)
+    if not claimed:
+        return False  # expired, past expires_at, or already linked elsewhere
     cm = await get_guild_config_manager()
     await cm.set_value(guild_id, "premium.enabled", True)
     return True

@@ -35,8 +35,10 @@ _SCOPES = "identify guilds"
 _AUTHORIZE_URL = "https://discord.com/oauth2/authorize"
 _TOKEN_URL = f"{DISCORD_API_BASE}/oauth2/token"
 
+# Anchored end-to-end: without the trailing $ a prefix match would accept
+# attacker hosts like https://eosofficial.club.evil.com (open redirect).
 _ALLOWED_REDIRECT_PATTERN = re.compile(
-    r"^https?://(localhost(:\d+)?|([a-z0-9-]+\.)?eosofficial\.club)(/.*)?"
+    r"^https?://(localhost(:\d+)?|([a-z0-9-]+\.)?eosofficial\.club)(/.*)?$"
 )
 
 

@@ -51,15 +51,17 @@ HOST = os.getenv("DASHBOARD_HOST", "0.0.0.0")
 PORT = int(os.getenv("DASHBOARD_PORT", "54014"))
 
 # CORS — filter falsy entries so an unset BASE_URL doesn't leak an empty origin.
+# Dev origins (Vite/localhost) are gated out of production: with
+# allow_credentials=True a stray localhost page must never be a valid origin.
+_DEV_CORS_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:54014",
+    "http://127.0.0.1:54014",
+]
 CORS_ORIGINS = [
     o
-    for o in [
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:54014",
-        "http://127.0.0.1:54014",
-        os.getenv("BASE_URL"),
-    ]
+    for o in ([] if IS_PRODUCTION else _DEV_CORS_ORIGINS) + [os.getenv("BASE_URL")]
     if o
 ]
 

@@ -15,7 +15,6 @@ import os
 from pathlib import Path
 
 import discord
-from discord.ext import commands
 from tabulate import tabulate
 
 from startup.bot import bot, s
@@ -28,15 +27,6 @@ logger = get_logger("Sync")
 # setup; the rest load in parallel for a faster boot.
 COG_DIRECTORIES = ["./commands", "./Features"]
 PRIORITY_COG_DIRECTORIES: list[str] = []
-
-
-@bot.command(name="load_cogs", help="Loads all cogs in the COG_DIRECTORIES list.")
-@commands.is_owner()
-async def load_cogs_command(ctx):
-    """Owner-only runtime cog (re)load."""
-    await ctx.send("Loading cogs...")
-    await load_cogs()
-    await ctx.send("Cogs loaded successfully.")
 
 
 def discover_cog_modules(directories: list[str]) -> list[tuple[str, str]]:

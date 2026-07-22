@@ -9,7 +9,7 @@ logger = get_logger("Idle")
 class IdleStatus(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.testing_mode = True  # Toggle to switch to testing statuses
+        self.testing_mode = False  # Toggle to switch to testing statuses
 
         self.playing_statuses = [
             "hide and seek with /bump",

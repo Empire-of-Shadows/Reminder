@@ -29,9 +29,31 @@ class PremiumManager:
         return await self._codes.find_one({"code": code})
 
     async def link_code_to_guild(self, code: str, guild_id: int) -> bool:
+        """Atomically claim an unused, unexpired code for a guild.
+
+        The unlinked/unexpired conditions live in the filter so two concurrent
+        redemptions of the same code cannot both succeed (the second matches
+        nothing and returns False). `expires_at` is stored as an ISO string
+        (see Features/premium/discordpre.py), so it is compared the same way.
+        """
+        now = datetime.now(timezone.utc)
         return await self._codes.update_one(
-            {"code": code},
-            {"$set": {"linked_guild": str(guild_id), "activated_at": datetime.now(timezone.utc)}}
+            {
+                "code": code,
+                "expired": {"$ne": True},
+                "$and": [
+                    {"$or": [
+                        {"linked_guild": {"$in": [0, "0", None, ""]}},
+                        {"linked_guild": {"$exists": False}},
+                    ]},
+                    {"$or": [
+                        {"expires_at": {"$exists": False}},
+                        {"expires_at": None},
+                        {"expires_at": {"$gt": now.isoformat()}},
+                    ]},
+                ],
+            },
+            {"$set": {"linked_guild": str(guild_id), "activated_at": now}}
         )
 
     async def get_user_entitlements(self, user_id: int) -> List[Dict[str, Any]]:

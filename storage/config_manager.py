@@ -262,6 +262,35 @@ class GuildConfigManager:
             logger.error(f"Error setting '{key}' for guild {guild_id}: {e}", exc_info=True)
             return False
 
+    async def set_values(self, guild_id: int, updates: Dict[str, Any]) -> bool:
+        """Set several (dotted) keys for a guild in one surgical $set.
+
+        Preferred over save_config for partial edits: it never rewrites the
+        whole document, so concurrent writers (bot timestamps, premium sweeper,
+        dashboard) cannot clobber each other's fields.
+        """
+        if not updates:
+            return True
+        if not self._initialized:
+            await self.initialize()
+        try:
+            now = datetime.now(timezone.utc)
+            await self._collection.update_one(
+                {"_id": str(guild_id)},
+                {
+                    "$set": {**updates, "updated_at": now},
+                    "$setOnInsert": {"created_at": now}
+                },
+                upsert=True
+            )
+            # Invalidate cache
+            async with self._cache_lock:
+                self._cache.pop(guild_id, None)
+            return True
+        except Exception as e:
+            logger.error(f"Error setting {sorted(updates)} for guild {guild_id}: {e}", exc_info=True)
+            return False
+
 _guild_config_manager: Optional[GuildConfigManager] = None
 
 async def get_guild_config_manager(db_manager=None) -> GuildConfigManager:

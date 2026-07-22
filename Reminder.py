@@ -9,7 +9,7 @@ Unified startup sequence (mirrors Ecom / TheHost / TheCodex):
     5. start_services(): bot.start raced against shutdown_event
     6. on_ready (idempotent via _init_done):
        Database Attachment → Cog Loading → Command Sync → Status Setup → Timer Reschedule
-    7. shutdown_handler(): health → DB → bot
+    7. shutdown_handler(): health → background tasks (cancel + await) → bot → DB
 """
 
 import asyncio
@@ -133,7 +133,13 @@ bot.event(on_ready)
 
 
 async def shutdown_handler():
-    """Graceful shutdown: health server → database → bot."""
+    """Graceful shutdown: health server → background tasks (cancel + await) → bot → database.
+
+    The bot closes BEFORE the database: ``bot.close()`` runs cog_unload hooks
+    that may still touch the DB, and cancelled timer/batch tasks are awaited so
+    nothing is mid-write when connections drop. Bump timers are safe to drop -
+    they are rebuilt from the stored timestamps on next boot (StartUp cog).
+    """
     shutdown_start = time.perf_counter()
     logger.info("🛑 Initiating graceful shutdown...")
 
@@ -142,12 +148,33 @@ async def shutdown_handler():
     except Exception as e:
         logger.error(f"❌ Error stopping health server: {e}")
 
+    # Cancel reminder timers and any pending 10s batch sends, collecting the
+    # cancelled tasks so we can await them before closing connections.
+    cancelled_tasks = []
     try:
-        logger.info("🔄 Closing database connections...")
-        await db_manager.close()
-        logger.info("✅ Database connections closed")
+        timer_handler = getattr(bot, "timer_handler", None)
+        if timer_handler is not None:
+            for task in list(timer_handler.active_timers.values()):
+                task.cancel()
+                cancelled_tasks.append(task)
     except Exception as e:
-        logger.error(f"❌ Error during database cleanup: {e}")
+        logger.error(f"❌ Error cancelling reminder timers: {e}")
+
+    try:
+        bump_cog = bot.get_cog("BumpHandler")
+        if bump_cog is not None:
+            for task in list(getattr(bump_cog, "channel_tasks", {}).values()):
+                task.cancel()
+                cancelled_tasks.append(task)
+    except Exception as e:
+        logger.error(f"❌ Error cancelling pending reminder batches: {e}")
+
+    if cancelled_tasks:
+        try:
+            await asyncio.gather(*cancelled_tasks, return_exceptions=True)
+            logger.info(f"✅ Drained {len(cancelled_tasks)} background task(s)")
+        except Exception as e:
+            logger.error(f"❌ Error awaiting cancelled background tasks: {e}")
 
     try:
         if not bot.is_closed():
@@ -155,6 +182,13 @@ async def shutdown_handler():
             logger.info("✅ Bot connection closed")
     except Exception as shutdown_error:
         logger.error(f"❌ Error during bot shutdown: {shutdown_error}")
+
+    try:
+        logger.info("🔄 Closing database connections...")
+        await db_manager.close()
+        logger.info("✅ Database connections closed")
+    except Exception as e:
+        logger.error(f"❌ Error during database cleanup: {e}")
 
     duration = time.perf_counter() - shutdown_start
     logger.info(f"🏁 Graceful shutdown completed in {duration:.2f}s")
