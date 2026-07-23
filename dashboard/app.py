@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from dashboard import db
+from dashboard._engine.activity import activity_middleware, setup_dashboard_logging
 from dashboard._engine.auth.csrf import csrf_endpoint, csrf_middleware
 from dashboard._engine.auth.session import (
     ensure_oauth_state_ttl_index,
@@ -21,6 +22,11 @@ from dashboard._engine.auth.oauth import router as auth_router
 from dashboard.routers.dashboard import router as dashboard_router
 from dashboard.routers.settings import router as settings_router
 from storage.log import get_logger
+
+# Configure the sinks before anything logs. Without this the process keeps
+# loguru's default DEBUG handler and prints every library's debug output; with
+# it the dashboard logs at INFO (LOG_LEVEL still wins) to console + logs/.
+setup_dashboard_logging("dashboard-reminder")
 
 startup_logger = get_logger("dashboard.startup")
 health_logger = get_logger("dashboard.health")
@@ -86,6 +92,11 @@ async def security_headers(request: Request, call_next):
     return response
 
 
+# Registered last, so it is the outermost middleware and sees the final status -
+# including the rate limiter's 429s and the CSRF check's 403s.
+app.middleware("http")(activity_middleware)
+
+
 # CSRF token + API/auth routes (registered first so they take priority over the
 # static page fallback below).
 app.add_api_route("/auth/csrf", csrf_endpoint, methods=["GET"])
@@ -143,4 +154,15 @@ if __name__ == "__main__":
 
     # Reload (file-watching, extra process) only in development. The container
     # entrypoint is `python -m dashboard.app`, so this path runs in production.
-    uvicorn.run("dashboard.app:app", host=HOST, port=PORT, reload=not IS_PRODUCTION)
+    # log_config=None leaves uvicorn's own loggers propagating into our loguru
+    # sinks instead of installing a second, separately-formatted handler;
+    # access_log=False because activity_middleware logs the same requests with
+    # the actor and guild attached.
+    uvicorn.run(
+        "dashboard.app:app",
+        host=HOST,
+        port=PORT,
+        reload=not IS_PRODUCTION,
+        log_config=None,
+        access_log=False,
+    )
