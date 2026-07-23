@@ -8,8 +8,8 @@ Unified startup sequence (mirrors Ecom / TheHost / TheCodex):
     4. _async_main(): install signal handlers → init DatabaseManager → start health endpoint (50014)
     5. start_services(): bot.start raced against shutdown_event
     6. on_ready (idempotent via _init_done):
-       Database Attachment → Cog Loading → Command Sync → Status Setup → Timer Reschedule
-    7. shutdown_handler(): health → DB → bot
+       Database Attachment → Cog Loading → Command Sync → Status Setup → Timer Reschedule → Background Tasks
+    7. shutdown_handler(): health → background tasks (cancel + await) → bot → DB
 """
 
 import asyncio
@@ -32,14 +32,14 @@ load_dotenv(_env_dir / ".env.local", override=True)
 import discord
 
 from startup.bot import bot, TOKEN, s  # noqa: E402,F401
-from storage.logging import get_logger, setup_application_logging  # noqa: E402
+from storage.log import get_logger, setup_application_logging  # noqa: E402
 from startup.sync import load_cogs, attach_databases, log_all_commands  # noqa: E402
 from startup.phases import (  # noqa: E402
     log_startup_summary,
     startup_phase,
 )
 from health_endpoint import initialize_health_server, stop_health_server  # noqa: E402
-from storage.manager import db_manager  # noqa: E402
+from storage.settings.collections import db_manager  # noqa: E402
 
 # Initialize application-wide logging
 APPLICATION_NAME = "discord-bot-reminder"
@@ -118,6 +118,15 @@ async def on_ready():
     except Exception as e:
         logger.error(f"❌ Error rescheduling timers on startup: {e}", exc_info=True)
 
+    try:
+        async with startup_phase("Background Tasks"):
+            idle = getattr(bot, "idle_manager", None)
+            if idle is not None:
+                idle.start_status_rotation()
+                logger.info("🎡 Idle presence rotation started")
+    except Exception as e:
+        logger.error(f"❌ Error starting background tasks: {e}", exc_info=True)
+
     log_startup_summary()
     logger.info("🎉 Bot is fully online and operational!")
 
@@ -133,7 +142,13 @@ bot.event(on_ready)
 
 
 async def shutdown_handler():
-    """Graceful shutdown: health server → database → bot."""
+    """Graceful shutdown: health server → background tasks (cancel + await) → bot → database.
+
+    The bot closes BEFORE the database: ``bot.close()`` runs cog_unload hooks
+    that may still touch the DB, and cancelled timer/batch tasks are awaited so
+    nothing is mid-write when connections drop. Bump timers are safe to drop -
+    they are rebuilt from the stored timestamps on next boot (StartUp cog).
+    """
     shutdown_start = time.perf_counter()
     logger.info("🛑 Initiating graceful shutdown...")
 
@@ -142,12 +157,40 @@ async def shutdown_handler():
     except Exception as e:
         logger.error(f"❌ Error stopping health server: {e}")
 
+    # Cancel reminder timers and any pending 10s batch sends, collecting the
+    # cancelled tasks so we can await them before closing connections.
+    cancelled_tasks = []
     try:
-        logger.info("🔄 Closing database connections...")
-        await db_manager.close()
-        logger.info("✅ Database connections closed")
+        timer_handler = getattr(bot, "timer_handler", None)
+        if timer_handler is not None:
+            for task in list(timer_handler.active_timers.values()):
+                task.cancel()
+                cancelled_tasks.append(task)
     except Exception as e:
-        logger.error(f"❌ Error during database cleanup: {e}")
+        logger.error(f"❌ Error cancelling reminder timers: {e}")
+
+    try:
+        bump_cog = bot.get_cog("BumpHandler")
+        if bump_cog is not None:
+            for task in list(getattr(bump_cog, "channel_tasks", {}).values()):
+                task.cancel()
+                cancelled_tasks.append(task)
+    except Exception as e:
+        logger.error(f"❌ Error cancelling pending reminder batches: {e}")
+
+    try:
+        idle = getattr(bot, "idle_manager", None)
+        if idle is not None and hasattr(idle, "stop_status_rotation"):
+            idle.stop_status_rotation()
+    except Exception as e:
+        logger.error(f"❌ Error stopping idle rotation: {e}")
+
+    if cancelled_tasks:
+        try:
+            await asyncio.gather(*cancelled_tasks, return_exceptions=True)
+            logger.info(f"✅ Drained {len(cancelled_tasks)} background task(s)")
+        except Exception as e:
+            logger.error(f"❌ Error awaiting cancelled background tasks: {e}")
 
     try:
         if not bot.is_closed():
@@ -155,6 +198,13 @@ async def shutdown_handler():
             logger.info("✅ Bot connection closed")
     except Exception as shutdown_error:
         logger.error(f"❌ Error during bot shutdown: {shutdown_error}")
+
+    try:
+        logger.info("🔄 Closing database connections...")
+        await db_manager.close()
+        logger.info("✅ Database connections closed")
+    except Exception as e:
+        logger.error(f"❌ Error during database cleanup: {e}")
 
     duration = time.perf_counter() - shutdown_start
     logger.info(f"🏁 Graceful shutdown completed in {duration:.2f}s")
@@ -231,7 +281,13 @@ async def _async_main(shutdown_event: asyncio.Event):
         raise
 
     try:
-        initialize_health_server(port=HEALTH_PORT, bot=bot, db_manager=db_manager)
+        initialize_health_server(
+            port=HEALTH_PORT,
+            bot=bot,
+            db_manager=db_manager,
+            bot_name="ImperialReminder",
+            service="Bump Reminder Bot",
+        )
         logger.info("✅ Health check endpoint initialized")
     except Exception as e:
         logger.error(f"❌ Failed to start health endpoint: {e}")

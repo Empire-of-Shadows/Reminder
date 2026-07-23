@@ -1,10 +1,10 @@
-# ───────────────────────────────────────────────────────────────────────────
-# VENDORED from storage_engine/ — DO NOT EDIT HERE.
+# ---------------------------------------------------------------------------
+# VENDORED from storage_engine/ - DO NOT EDIT HERE.
 # Edit the master at <repo-root>/EmpireSystems/storage_engine/ and run:
 #     python tools/sync_storage_engine.py
 # Drift is enforced by:  python tools/sync_storage_engine.py --check
-# ───────────────────────────────────────────────────────────────────────────
-"""AuditLog — generic admin/action audit writer.
+# ---------------------------------------------------------------------------
+"""AuditLog - generic admin/action audit writer.
 
 Capability: append-only audit trail. Promoted from the near-identical ``AuditLogger`` in
 TheHost / TheCodex / EcomRebuild (each persisted "who changed what, when, from where" for
@@ -51,7 +51,7 @@ class AuditLog:
 
     async def log(self, **fields: Any) -> bool:
         """Capability: write one audit entry. Persists the given fields plus a UTC
-        ``created_at`` timestamp; all values are coerced Mongo/JSON-safe. Best-effort — returns
+        ``created_at`` timestamp; all values are coerced Mongo/JSON-safe. Best-effort - returns
         ``False`` (and logs) on error rather than raising into the caller's request."""
         try:
             doc = {k: _to_safe(v) for k, v in fields.items()}
@@ -80,7 +80,7 @@ class AuditLog:
         bot's admin panel: who/what/when/where + before→after). Extra kwargs are merged in."""
         return await self.log(
             guild_id=str(guild_id),
-            actor_id=int(actor_id) if actor_id is not None else None,
+            actor_id=str(actor_id) if actor_id is not None else None,
             actor_name=str(actor_name)[:128],
             source=source,
             section=section,

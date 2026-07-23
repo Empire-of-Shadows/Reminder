@@ -1,10 +1,9 @@
-import asyncio
-from datetime import datetime, timezone
+from datetime import datetime
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set
-from collections import OrderedDict
+from typing import Any, Dict, List, Optional
 
-from storage.logging import get_logger
+from storage.config.guild_config_store import GuildConfigStore
+from storage.log import get_logger
 
 logger = get_logger("GuildConfig")
 
@@ -140,127 +139,103 @@ class GuildConfig:
         )
 
 class GuildConfigManager:
-    """Manages per-guild configuration for ImperialReminder."""
+    """Typed wrapper over the engine GuildConfigStore.
+
+    The store owns caching (hit-first via the CollectionManager's CacheBackend,
+    30s TTL to bound cross-process staleness vs the dashboard) and every write is
+    a surgical dotted ``$set`` - never a full-document replace. This class only
+    adds the ``GuildConfig`` dataclass boundary and a last-read memo (``peek``)
+    for synchronous display code.
+    """
 
     def __init__(self, db_manager):
         self.db_manager = db_manager
-        self._cache: Dict[int, GuildConfig] = {}
-        self._cache_time: Dict[int, datetime] = {}
-        self._cache_checked: Dict[int, datetime] = {}
-        self._cache_grace_seconds = 30
-        self._collection = None
+        self._store: Optional[GuildConfigStore] = None
+        self._last_read: Dict[int, GuildConfig] = {}
         self._initialized = False
-        self._cache_lock = asyncio.Lock()
 
     async def initialize(self) -> None:
-        """Initialize the manager and connect to the collection."""
+        """Initialize the manager and connect the engine store to the collection."""
         if self._initialized:
             return
         try:
-            self._collection = self.db_manager.get_collection_manager('settings_guild_data')
+            self._store = GuildConfigStore(
+                self.db_manager.get_collection_manager('settings_guild_data'),
+                id_field="_id",
+                cache_ttl=30,
+            )
             self._initialized = True
-            logger.info("GuildConfigManager initialized successfully")
+            logger.info("GuildConfigManager initialized successfully (engine GuildConfigStore)")
         except Exception as e:
             logger.error(f"Failed to initialize GuildConfigManager: {e}", exc_info=True)
             raise
 
     async def get_config(self, guild_id: int, use_cache: bool = True) -> GuildConfig:
-        """Get the configuration for a guild."""
+        """Get the configuration for a guild (default config if unconfigured)."""
         if not self._initialized:
             await self.initialize()
 
-        if use_cache and guild_id in self._cache:
-            now = datetime.now(timezone.utc)
-            last_check = self._cache_checked.get(guild_id)
-            if last_check and (now - last_check).total_seconds() < self._cache_grace_seconds:
-                return self._cache[guild_id]
-            
-            # Check for staleness
-            doc_meta = await self._collection.find_one(
-                {"_id": str(guild_id)}, projection={"updated_at": 1}
-            )
-            self._cache_checked[guild_id] = now
-            db_updated = doc_meta.get("updated_at") if doc_meta else None
-            if db_updated and isinstance(db_updated, datetime):
-                if db_updated.tzinfo is None:
-                    db_updated = db_updated.replace(tzinfo=timezone.utc)
-                if db_updated > self._cache_time.get(guild_id, now):
-                    logger.debug(f"Config stale for guild {guild_id}, refetching")
-                else:
-                    return self._cache[guild_id]
-            else:
-                return self._cache[guild_id]
-
         try:
-            doc = await self._collection.find_one({"_id": str(guild_id)})
-
+            doc = await self._store.get_doc(guild_id, use_cache=use_cache)
             if doc:
                 config = GuildConfig.from_dict(doc)
             else:
-                config = GuildConfig(guild_id=guild_id)
+                config = GuildConfig(guild_id=int(guild_id))
                 logger.debug(f"Using default config for unconfigured guild {guild_id}")
-
-            async with self._cache_lock:
-                now = datetime.now(timezone.utc)
-                self._cache[guild_id] = config
-                self._cache_time[guild_id] = now
-                self._cache_checked[guild_id] = now
-
-            return config
-
         except Exception as e:
             logger.error(f"Error fetching config for guild {guild_id}: {e}", exc_info=True)
-            return GuildConfig(guild_id=guild_id)
+            return GuildConfig(guild_id=int(guild_id))
+
+        self._last_read[int(guild_id)] = config
+        return config
+
+    def peek(self, guild_id: int) -> Optional[GuildConfig]:
+        """Last GuildConfig read for this guild (sync, display-only; may be stale)."""
+        return self._last_read.get(int(guild_id))
+
+    def invalidate(self, guild_id: int) -> None:
+        """Drop one guild's cached document and last-read memo."""
+        if self._store is not None:
+            self._store.invalidate(guild_id)
+        self._last_read.pop(int(guild_id), None)
 
     async def save_config(self, config: GuildConfig) -> bool:
-        """Save a guild's configuration to the database."""
+        """Persist a full config (dotted-$set upsert of its fields; timestamps engine-owned).
+
+        Prefer set_value/set_values for partial edits - this writes every field the
+        dataclass carries (it does not delete unknown stored fields).
+        """
         if not self._initialized:
             await self.initialize()
-
-        try:
-            now = datetime.now(timezone.utc)
-            config.updated_at = now
-            if config.created_at is None:
-                config.created_at = now
-
-            await self._collection.replace_one(
-                {"_id": str(config.guild_id)},
-                config.to_dict(),
-                upsert=True
-            )
-
-            async with self._cache_lock:
-                self._cache[config.guild_id] = config
-                self._cache_time[config.guild_id] = now
-                self._cache_checked[config.guild_id] = now
-
-            return True
-
-        except Exception as e:
-            logger.error(f"Error saving config for guild {config.guild_id}: {e}", exc_info=True)
-            return False
+        ok = await self._store.save_doc(config.guild_id, config.to_dict())
+        if ok:
+            self._last_read[int(config.guild_id)] = config
+        return ok
 
     async def set_value(self, guild_id: int, key: str, value: Any) -> bool:
-        """Set a specific value for a guild."""
+        """Set a specific (dotted) key for a guild via surgical $set."""
         if not self._initialized:
             await self.initialize()
-        try:
-            now = datetime.now(timezone.utc)
-            await self._collection.update_one(
-                {"_id": str(guild_id)},
-                {
-                    "$set": {key: value, "updated_at": now},
-                    "$setOnInsert": {"created_at": now}
-                },
-                upsert=True
-            )
-            # Invalidate cache
-            async with self._cache_lock:
-                self._cache.pop(guild_id, None)
+        ok = await self._store.set_setting(key, value, guild_id)
+        if ok:
+            self._last_read.pop(int(guild_id), None)
+        return ok
+
+    async def set_values(self, guild_id: int, updates: Dict[str, Any]) -> bool:
+        """Set several (dotted) keys for a guild in one surgical $set.
+
+        Preferred over save_config for partial edits: it never rewrites the
+        whole document, so concurrent writers (bot timestamps, premium sweeper,
+        dashboard) cannot clobber each other's fields.
+        """
+        if not updates:
             return True
-        except Exception as e:
-            logger.error(f"Error setting '{key}' for guild {guild_id}: {e}", exc_info=True)
-            return False
+        if not self._initialized:
+            await self.initialize()
+        ok = await self._store.set_many(updates, guild_id)
+        if ok:
+            self._last_read.pop(int(guild_id), None)
+        return ok
 
 _guild_config_manager: Optional[GuildConfigManager] = None
 

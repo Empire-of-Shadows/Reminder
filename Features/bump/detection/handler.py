@@ -15,7 +15,7 @@ from storage.sub_systems.bump_config import (
     BUMPIT_SUCCESS_KEYWORD, ONE, BUMP_BOTS, WEBUMP_ID, WEBUMP_SUCCESS,
     SUCCESS_KEYWORDS, BUMP_BOTS_INFO
 )
-from storage.logging import get_logger
+from storage.log import get_logger
 
 logger = get_logger("BumpHandler")
 
@@ -28,10 +28,20 @@ class BumpHandler(commands.Cog):
         self.channel_queues = defaultdict(list)
         self.channel_tasks = {}
         self.embed_manager = TimerEmbedManager(bot)
-        self._seen_raw = set()
         # Track processed bumps: (guild_id, bot_name) -> timestamp
         self._processed_bumps = {}
         self._bump_cooldown = 5.0  # seconds to ignore duplicate bump detections
+
+    async def cog_unload(self):
+        """Cancel pending 10s batch-send tasks so reload/shutdown never orphans them."""
+        tasks = list(self.channel_tasks.values())
+        self.channel_tasks.clear()
+        self.channel_queues.clear()
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+            logger.info(f"Cancelled {len(tasks)} pending reminder batch task(s) on unload")
 
     def _resolve_bot_info(self, *, author_id: int | None, webhook_id: int | None, application_id: int | None):
         """
@@ -254,11 +264,19 @@ class BumpHandler(commands.Cog):
 
         if reminders:
             config = await self.bot.guild_config_manager.get_config(channel.guild.id)
-            premium_enabled = config.premium.get("enabled", False)
+            # Premium comes from the engine entitlement state; the webhook URL is
+            # still guild config (a premium-gated delivery setting).
+            premium_enabled = False
+            pm = getattr(self.bot, "premium_manager", None)
+            if pm is not None:
+                try:
+                    premium_enabled = await pm.is_premium_guild(str(channel.guild.id))
+                except Exception as e:
+                    logger.warning(f"Premium check failed for {channel.guild.id}: {e}")
             webhook_url = config.premium.get("guild_webhook")
 
             bots = ", ".join(f"**{bot_name}**" for _, bot_name in reminders)
-            role_mentions = set(role_id for role_id, _ in reminders)
+            role_mentions = set(role_id for role_id, _ in reminders if role_id)
             role_mentions_text = " ".join(f"<@&{r}>" for r in role_mentions)
 
             custom_message = config.custom_message
@@ -267,19 +285,27 @@ class BumpHandler(commands.Cog):
             else:
                 message = f"{role_mentions_text} It's time to bump again for: {bots}!"
 
+            # Only the configured bump role(s) may ever ping - never @everyone,
+            # never users, never other roles a custom_message might smuggle in.
+            mentions = discord.AllowedMentions(
+                everyone=False,
+                users=False,
+                roles=[discord.Object(id=r) for r in role_mentions],
+            )
+
             try:
                 if premium_enabled and webhook_url:
                     try:
                         async with aiohttp.ClientSession() as session:
                             webhook = discord.Webhook.from_url(webhook_url, session=session)
-                            await webhook.send(content=message)
+                            await webhook.send(content=message, allowed_mentions=mentions)
                         logger.info(
                             f"Sent batched bump reminder via webhook for {channel.guild.id} in {channel.id}: {bots}")
                     except Exception as webhook_error:
                         logger.error(f"Failed to send via webhook for guild {channel.guild.id}: {webhook_error}")
-                        await channel.send(message)
+                        await channel.send(message, allowed_mentions=mentions)
                 else:
-                    await channel.send(message)
+                    await channel.send(message, allowed_mentions=mentions)
                     logger.info(f"Sent batched bump reminder for {channel.guild.id} in {channel.id}: {bots}")
             except Exception as e:
                 logger.error(f"Failed to send bump reminder for guild {channel.guild.id}: {e}")

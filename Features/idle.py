@@ -1,91 +1,58 @@
+"""Idle presence seam for ImperialReminder (bot-owned, NOT vendored).
+
+The rotation machinery (loop, jitter, no-repeat queues, lifecycle) lives in the
+vendored runtime engine at ``startup/presence.py``; this file supplies only
+reminder's DATA: the bump-flavored phrase pools and its presence defaults.
+Attached as ``bot.idle_manager`` in ``attach_databases`` and started from
+``on_ready``; the old joke "testing" pool and the hardcoded testing_mode flag
+are gone.
+
+No ``setup()`` here on purpose - this is a manager, not a cog (the auto-loader
+skips files without ``setup``).
+"""
+
 import discord
-from discord.ext import commands, tasks
-import random
 
-from storage.logging import get_logger
+from startup.presence import PresenceRotator
 
-logger = get_logger("Idle")
+# Activity pools by ActivityType name: playing, watching, listening.
+POOLS = {
+    "playing": [
+        "hide and seek with /bump",
+        "tag—you're bumped!",
+        "90% uptime simulator",
+        "with the bots code",
+    ],
+    "watching": [
+        "for /bump commands",
+        "you configure /admin panel",
+        "every /bump like a hawk",
+        "users ignore the timer",
+        "for frequent restarts",
+    ],
+    "listening": [
+        "bump reminders",
+        "feedback from users",
+        "bump cooldown complaints",
+        "bug reports and praises",
+        "late night bumps",
+        "your inner thoughts... maybe",
+    ],
+}
 
-class IdleStatus(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
-        self.testing_mode = True  # Toggle to switch to testing statuses
 
-        self.playing_statuses = [
-            "hide and seek with /bump",
-            "tag—you’re bumped!",
-            "90% uptime simulator",
-            "with the bots code"
-        ]
-        self.watching_statuses = [
-            "for /bump commands",
-            "you configure /admin panel",
-            "every /bump like a hawk",
-            "users ignore the timer",
-            "for frequent restarts"
-        ]
-        self.listening_statuses = [
-            "bump reminders",
-            "feedback from users",
-            "bump cooldown complaints",
-            "bug reports and praises",
-            "late night bumps",
-            "your inner thoughts... maybe"
-        ]
+class IdleManager(PresenceRotator):
+    """Reminder's presence rotator: the engine mechanics over reminder's pools.
 
-        self.testing_statuses = [
-            ("playing", "in ⚠️ mode — stability not guaranteed"),
-            ("listening", "💇‍♂️ bumpers panic in real-time"),
-            ("playing", "🪖 patching the code like it's war"),
-            ("listening", "👨‍🔧 gears grinding... slowly... painfully"),
-            ("playing", "a round of ⚠️ 'What broke this time?'"),
-            ("watching", "🪖 deploy logs flood in"),
-            ("listening", "users scream 💇‍♂️ into the void"),
-            ("playing", "hotfix roulette 👨‍🔧"),
-            ("listening", "bumpers brave enough to test 🪖"),
-            ("playing", "tag, you're unstable ⚠️"),
-            ("listening", "thank yous buried in bug reports 💙"),
-            ("playing", "👨‍🔧 engineer mode: chaotic neutral"),
-            ("watching", "for life signs in the bump thread ⚠️"),
-            ("playing", "💇‍♂️ debug dance of the doomed"),
-            ("watching", "users cope — some even thrive 🪖"),
-            ("listening", "👂 whispers of a stable release... soon"),
-        ]
+    Status is deliberately ``idle`` (the bot mostly waits on cooldowns); the
+    Status Setup phase's ``online`` only covers the window before rotation starts.
+    """
 
-        self.rotate_status.start()
-
-    def cog_unload(self):
-        self.rotate_status.cancel()
-
-    @tasks.loop(seconds=30)
-    async def rotate_status(self):
-        if self.testing_mode:
-            # Use testing statuses
-            type_str, message = random.choice(self.testing_statuses)
-            activity_type = getattr(discord.ActivityType, type_str)
-        else:
-            # Use normal statuses
-            activity_type = random.choice([
-                discord.ActivityType.playing,
-                discord.ActivityType.watching,
-                discord.ActivityType.listening
-            ])
-
-            if activity_type == discord.ActivityType.playing:
-                message = random.choice(self.playing_statuses)
-            elif activity_type == discord.ActivityType.watching:
-                message = random.choice(self.watching_statuses)
-            else:
-                message = random.choice(self.listening_statuses)
-
-        await self.bot.change_presence(
+    def __init__(self, bot: discord.Client):
+        super().__init__(
+            bot,
+            POOLS,
+            rotation_interval=30.0,
+            interval_jitter=3.0,
             status=discord.Status.idle,
-            activity=discord.Activity(type=activity_type, name=message)
         )
-
-    @rotate_status.before_loop
-    async def before_rotate_status(self):
-        await self.bot.wait_until_ready()
-
-async def setup(bot):
-    await bot.add_cog(IdleStatus(bot))

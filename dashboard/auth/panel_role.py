@@ -1,136 +1,54 @@
-"""Panel-role resolution for the ImperialReminder dashboard.
+"""Panel-role policy for the ImperialReminder dashboard (3-tier: admin / mod / none).
 
-Brings ImperialReminder in line with the other ecosystem dashboards
-(TheHost / TheCodex / Ecom): a per-guild access tier resolved from Discord
-MANAGE_GUILD plus configured admin/mod roles stored on the guild config doc.
-
-Config shape (Settings collection `settings_guild_data`, _id = str(guild_id)):
-    roles.admin_role_ids : list of role ids
-    roles.mod_role_ids   : list of role ids
+The live guild-permission plumbing (bot-token MANAGE_GUILD check, member-role fetch,
+rate limiter, caches) lives in the shared engine at
+``dashboard/_engine/auth/panel_access.py``. This file is only reminder's tier policy:
+admin/mod role lists live on the guild config document (``ImperialReminder.GuildData``,
+``_id`` = str(guild_id)) at the canonical ``roles.admin_role_ids`` /
+``roles.mod_role_ids`` paths - the SAME lists the in-Discord ``/admin panel``'s
+Panel Access menu edits.
 
 Tiers:
-  - "admin": MANAGE_GUILD OR overlap with roles.admin_role_ids
-  - "mod":   overlap with roles.mod_role_ids
+  - "admin": MANAGE_GUILD (verified live via the bot token) OR overlap with
+    roles.admin_role_ids
+  - "mod":   overlap with roles.mod_role_ids (read-only on this dashboard)
   - "none":  no panel access
-
-Role membership is resolved server-side via the bot token; never trust a
-client-supplied role claim.
 """
 
 from __future__ import annotations
 
-import asyncio
-import time
-from typing import Literal
-
-import httpx
 from fastapi import Depends, HTTPException
 
+from dashboard._engine.auth.panel_access import (
+    PanelRole,
+    has_manage_guild,
+    member_role_ids,
+    session_has_manage_guild,
+)
 from dashboard.auth.dependencies import get_current_user
-from dashboard.config import BOT_TOKEN, DISCORD_API_BASE, MANAGE_GUILD_PERMISSION
-from storage.manager import db_manager
-from storage.logging import get_logger
+from storage.settings.collections import db_manager
+from storage.log import get_logger
 
 logger = get_logger("dashboard.auth.panel_role")
 
-PanelRole = Literal["admin", "mod", "none"]
-
 # Sections a mod tier may PUT. Empty -> mods are read-only (view settings, no
-# changes), matching Ecom. Admin tier edits everything.
+# changes). Admin tier edits everything.
 MOD_ALLOWED_SECTIONS: frozenset[str] = frozenset()
 
-_CONFIG_COLLECTION = "settings_guild_data"
 
-_MEMBER_CACHE_TTL = 60.0
-_MEMBER_NEGATIVE_TTL = 60.0
-_member_cache: dict[tuple[str, str], tuple[frozenset[str], float]] = {}
-_cache_lock = asyncio.Lock()
-
-# Token-bucket rate limiter for the bot-token member-fetch path (mirrors the
-# sibling dashboards). Discord's global bot limit is 50/s; stay well under it.
-_RATE_CAPACITY = 5
-_RATE_REFILL_PER_SEC = 20.0
-_rate_tokens = float(_RATE_CAPACITY)
-_rate_last_refill = time.monotonic()
-_rate_lock = asyncio.Lock()
-
-
-def _session_has_manage_guild(session: dict, guild_id: str) -> bool:
-    for g in session.get("guilds", []):
-        if str(g["id"]) == str(guild_id):
-            perms = int(g.get("permissions", 0))
-            return (perms & MANAGE_GUILD_PERMISSION) == MANAGE_GUILD_PERMISSION
-    return False
-
-
-async def _acquire_rate_slot() -> None:
-    global _rate_tokens, _rate_last_refill
-    while True:
-        async with _rate_lock:
-            now = time.monotonic()
-            elapsed = now - _rate_last_refill
-            if elapsed > 0:
-                _rate_tokens = min(
-                    float(_RATE_CAPACITY),
-                    _rate_tokens + elapsed * _RATE_REFILL_PER_SEC,
-                )
-                _rate_last_refill = now
-            if _rate_tokens >= 1.0:
-                _rate_tokens -= 1.0
-                return
-            need = 1.0 - _rate_tokens
-            wait = need / _RATE_REFILL_PER_SEC
-        await asyncio.sleep(wait)
-
-
-async def _member_role_ids(guild_id: str, user_id: str) -> frozenset[str]:
-    key = (str(guild_id), str(user_id))
-    now = time.monotonic()
-    cached = _member_cache.get(key)
-    if cached is not None and now - cached[1] < _MEMBER_CACHE_TTL:
-        return cached[0]
-
-    if not BOT_TOKEN:
-        return frozenset()
-
-    await _acquire_rate_slot()
-
-    headers = {"Authorization": f"Bot {BOT_TOKEN}"}
-    url = f"{DISCORD_API_BASE}/guilds/{guild_id}/members/{user_id}"
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url, headers=headers)
-            if resp.status_code == 429:
-                retry = float(resp.headers.get("Retry-After", "2"))
-                await asyncio.sleep(retry)
-                await _acquire_rate_slot()
-                resp = await client.get(url, headers=headers)
-    except Exception as e:
-        logger.warning("Discord member fetch failed for %s/%s: %s", guild_id, user_id, e)
-        return frozenset()
-
-    if resp.status_code == 404:
-        roles: frozenset[str] = frozenset()
-    elif resp.status_code == 200:
-        roles = frozenset(str(r) for r in resp.json().get("roles", []))
-    else:
-        logger.warning("Discord member fetch %s/%s -> %s", guild_id, user_id, resp.status_code)
-        async with _cache_lock:
-            _member_cache[key] = (frozenset(), now - (_MEMBER_CACHE_TTL - _MEMBER_NEGATIVE_TTL))
-        return frozenset()
-
-    async with _cache_lock:
-        _member_cache[key] = (roles, now)
-    return roles
+def _guild_data_collection():
+    # Engine CollectionManager for ImperialReminder.GuildData; no raw access.
+    return db_manager.get_collection_manager("settings_guild_data")
 
 
 async def _guild_role_lists(guild_id: str) -> tuple[frozenset[str], frozenset[str]]:
     """Return (admin_role_ids, mod_role_ids) configured for the guild."""
     try:
-        coll = db_manager.get_collection_manager(_CONFIG_COLLECTION)
-        doc = await coll.find_one({"_id": str(guild_id)}, projection={"roles": 1})
+        doc = await _guild_data_collection().find_one(
+            {"_id": str(guild_id)}, projection={"roles": 1}
+        )
     except Exception:
-        logger.warning("panel-role config lookup failed for %s", guild_id, exc_info=True)
+        logger.warning(f"panel-role config lookup failed for {guild_id}", exc_info=True)
         return (frozenset(), frozenset())
     roles = (doc or {}).get("roles") or {}
     admin_ids = frozenset(str(r) for r in (roles.get("admin_role_ids") or []))
@@ -138,8 +56,20 @@ async def _guild_role_lists(guild_id: str) -> tuple[frozenset[str], frozenset[st
     return (admin_ids, mod_ids)
 
 
-async def resolve_panel_role(session: dict, guild_id: str) -> PanelRole:
-    if _session_has_manage_guild(session, guild_id):
+async def resolve_panel_role(
+    session: dict, guild_id: str, *, verify_manage_live: bool = True
+) -> PanelRole:
+    """Resolve the user's panel tier for ``guild_id``.
+
+    ``verify_manage_live=False`` uses the cheap session snapshot for the MANAGE_GUILD
+    step (for guild-list probing); the default verifies it live via the bot token, so a
+    revoked Manage Server loses dashboard admin immediately rather than after the
+    session's guild-list cache expires.
+    """
+    if verify_manage_live:
+        if await has_manage_guild(session, guild_id):
+            return "admin"
+    elif session_has_manage_guild(session, guild_id):
         return "admin"
 
     admin_ids, mod_ids = await _guild_role_lists(guild_id)
@@ -150,7 +80,7 @@ async def resolve_panel_role(session: dict, guild_id: str) -> PanelRole:
     if not user_id:
         return "none"
 
-    member_roles = await _member_role_ids(str(guild_id), str(user_id))
+    member_roles = await member_role_ids(str(guild_id), str(user_id))
     if not member_roles:
         return "none"
 

@@ -10,12 +10,34 @@ unit of aggregation is the guild rather than the user).
 """
 
 import time
+from datetime import datetime, timezone
 
 from storage.config_manager import GuildConfig
-from storage.manager import db_manager
+from storage.settings.collections import db_manager
 from storage.sub_systems.bump_config import BOT_DISPLAY_NAMES, BUMP_BOTS
 
 _CONFIG_COLLECTION = "settings_guild_data"
+_PREMIUM_STATE_COLLECTION = "premium_state"
+
+
+async def guild_is_premium(guild_id) -> bool:
+    """Read the engine's derived premium_state doc for a guild.
+
+    The dashboard runs without the bot's PremiumManager, so it reads the derived
+    state directly and applies the lazy-expiry rule itself (a stored
+    ``is_premium: true`` past its ``expires_at`` counts as lapsed).
+    """
+    coll = db_manager.get_collection_manager(_PREMIUM_STATE_COLLECTION)
+    doc = await coll.find_one({"_id": f"guild:{guild_id}"})
+    if not doc or not doc.get("is_premium"):
+        return False
+    expires = doc.get("expires_at")
+    if isinstance(expires, datetime):
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        if expires <= datetime.now(timezone.utc):
+            return False
+    return True
 
 
 async def public_stats() -> dict:
@@ -23,7 +45,11 @@ async def public_stats() -> dict:
     coll = db_manager.get_collection_manager(_CONFIG_COLLECTION)
 
     servers = await coll.count_documents({})
-    premium_servers = await coll.count_documents({"premium.enabled": True})
+    # Engine premium: derived state docs (may slightly overcount if a lapsed
+    # state has not been recomputed yet - fine for a public counter).
+    premium_servers = await db_manager.get_collection_manager(
+        _PREMIUM_STATE_COLLECTION
+    ).count_documents({"scope": "guild", "is_premium": True})
 
     # Sum of enabled bots across every guild = total bump bots being tracked.
     docs = await coll.find_many({}, projection={"enabled_bots": 1})
@@ -36,13 +62,14 @@ async def public_stats() -> dict:
     }
 
 
-def guild_bump_stats(config: GuildConfig) -> dict:
+def guild_bump_stats(config: GuildConfig, premium: bool = False) -> dict:
     """Per-bot bump status for one guild, computed from an already-fetched config.
 
-    Pure function (no I/O) so the router controls the DB fetch.
+    Pure function (no I/O) so the router controls the DB fetch; ``premium`` comes
+    from ``guild_is_premium`` (engine entitlement state), not the retired
+    ``premium.enabled`` config flag.
     """
     now = int(time.time())
-    premium = bool(config.premium.get("enabled")) if config.premium else False
 
     bots: list[dict] = []
     for key in config.enabled_bots:

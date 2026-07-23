@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
 import type { User } from "../api/types";
-import { EcosystemNav } from "./EcosystemNav";
+import { EcosystemNav } from "../_engine/components/EcosystemNav";
 
 function navClass({ isActive }: { isActive: boolean }) {
   return "nav-button" + (isActive ? " active" : "");

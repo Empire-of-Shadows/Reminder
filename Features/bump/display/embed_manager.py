@@ -3,7 +3,7 @@ from typing import List, Tuple, Optional
 import discord
 from discord.ext import commands
 
-from storage.logging import get_logger
+from storage.log import get_logger
 
 logger = get_logger("TimerEmbedManager")
 

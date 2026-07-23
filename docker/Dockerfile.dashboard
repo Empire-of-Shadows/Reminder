@@ -13,7 +13,9 @@ WORKDIR /repo
 RUN git clone --depth 1 --branch "${GIT_REF}" "${REPO_URL}" .
 
 WORKDIR /repo/dashboard/frontend
-RUN npm ci && npm run build
+# Use `npm install` (not `npm ci`): the committed lockfile omits the wasm binding's
+# @emnapi/* transitive deps, which npm 10 (node:22) rejects under the strict `npm ci` check.
+RUN npm install --no-audit --no-fund && npm run build
 
 ## Stage 2: Python backend (serves the built SPA from dashboard/frontend/dist)
 FROM python:3.13-slim

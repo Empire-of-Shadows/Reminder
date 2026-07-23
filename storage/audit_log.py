@@ -1,34 +1,26 @@
-import logging
-from datetime import datetime, timezone
-from typing import Dict, Any, Optional
+"""Audit-log seam - ImperialReminder (bot-owned, NOT vendored).
 
-from storage.logging import get_logger
+Thin construction seam over the engine ``storage.services.audit_log.AuditLog``: the
+singleton factory keeps the pre-migration ``get_audit_log_manager()`` API so call sites
+(``startup/sync.py`` attach, the admin seam's ``audit_log_entry``) are unchanged. The
+engine writer accepts arbitrary keyword fields, so the existing
+``log(guild_id=..., user_id=..., action=..., details=...)`` calls flow through as-is;
+entries gain the engine's Mongo/JSON coercion and a ``created_at`` timestamp that the
+registered ``audit_log`` collection's TTL index uses for 365-day retention.
+"""
 
-logger = get_logger("AuditLog")
+from typing import Optional
 
-class AuditLogManager:
-    def __init__(self, db_manager):
-        self.db_manager = db_manager
-        self._collection = db_manager.get_raw_collection("ImperialReminder", "audit_log")
+from storage.services.audit_log import AuditLog
 
-    async def log(self, guild_id: int, user_id: int, action: str, details: Optional[Dict[str, Any]] = None):
-        try:
-            entry = {
-                "guild_id": guild_id,
-                "user_id": user_id,
-                "action": action,
-                "details": details or {},
-                "timestamp": datetime.now(timezone.utc)
-            }
-            await self._collection.insert_one(entry)
-        except Exception as e:
-            logger.error(f"Error writing to audit log: {e}")
+_audit_log: Optional[AuditLog] = None
 
-_audit_log_manager = None
 
-def get_audit_log_manager(db_manager=None):
-    global _audit_log_manager
-    if _audit_log_manager is None:
-        if db_manager is None: raise ValueError("db_manager required")
-        _audit_log_manager = AuditLogManager(db_manager)
-    return _audit_log_manager
+def get_audit_log_manager(db_manager=None) -> AuditLog:
+    """Get or create the shared engine AuditLog over the registered collection."""
+    global _audit_log
+    if _audit_log is None:
+        if db_manager is None:
+            raise ValueError("db_manager required")
+        _audit_log = AuditLog(db_manager.get_collection_manager("audit_log"))
+    return _audit_log
