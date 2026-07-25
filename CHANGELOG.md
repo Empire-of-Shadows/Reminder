@@ -20,6 +20,11 @@ For the technical, commit-level history, see git.
   Servers the bot has not joined yet show an invite link instead.
 
 ### Fixed
+- Restarting the bot no longer re-pings your bump role. Previously, any cooldown that had already
+  run out got announced again every time the bot restarted or reconnected to Discord, so a quiet
+  server could be pinged repeatedly for the same bump. The bot now remembers which bump it has
+  already reminded you about: a reminder that was missed because the bot was offline still arrives,
+  but only once.
 - The dashboard's public stats endpoint crashed on every request, so the sign-in page showed no
   server or bump-bot counts.
 

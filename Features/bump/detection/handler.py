@@ -307,8 +307,31 @@ class BumpHandler(commands.Cog):
                 else:
                     await channel.send(message, allowed_mentions=mentions)
                     logger.info(f"Sent batched bump reminder for {channel.guild.id} in {channel.id}: {bots}")
+                await self._mark_reminded(
+                    channel.guild.id, [b for _, b in reminders], config.timestamps
+                )
             except Exception as e:
                 logger.error(f"Failed to send bump reminder for guild {channel.guild.id}: {e}")
+
+    async def _mark_reminded(self, guild_id: int, bot_names, timestamps: dict) -> None:
+        """Record which bump each sent reminder covered.
+
+        Stored as ``timestamps.{bot}_reminded`` = the bump timestamp the reminder was
+        for. StartUp compares the two on boot, so a cooldown that elapsed while the bot
+        was offline still fires once, but a restart never re-sends a reminder that
+        already went out. Only called after the message actually left.
+        """
+        updates = {}
+        for bot_name in set(bot_names):
+            stamp = int(timestamps.get(f"{bot_name}_timestamp", 0) or 0)
+            if stamp:
+                updates[f"timestamps.{bot_name}_reminded"] = stamp
+        if not updates:
+            return
+        try:
+            await self.bot.guild_config_manager.set_values(guild_id, updates)
+        except Exception as e:
+            logger.warning(f"[{guild_id}] Could not record reminder state: {e}")
 
     # Text extraction methods (kept from original but modernized)
     def normalize_text(self, s: str) -> str:
