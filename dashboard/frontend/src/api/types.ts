@@ -84,6 +84,21 @@ export interface BumpBotStatus {
   status: "ready" | "waiting";
 }
 
+/** A server shown in the privacy page's data-scope picker. `name` is null when
+ * the record outlived the user's membership. */
+export interface ScopeGuild {
+  id: string;
+  name: string | null;
+  icon: string | null;
+}
+
+/** Result of erasing the signed-in user's records, keyed by collection. */
+export interface DeleteUserDataResponse {
+  user_id: string;
+  guild_id: string | null;
+  deleted: Record<string, number>;
+}
+
 export interface GuildBumpStats {
   guild_id: string;
   premium: boolean;

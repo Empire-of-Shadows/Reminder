@@ -8,6 +8,8 @@ import type {
   SettingsPatch,
   GuildSettings,
   GuildBumpStats,
+  ScopeGuild,
+  DeleteUserDataResponse,
 } from "./types";
 import { apiFetch, apiUrl } from "../_engine/api/http";
 
@@ -44,6 +46,21 @@ export const api = {
 
   guildBumpStats: (guildId: string) =>
     apiFetch<GuildBumpStats>(`/api/guilds/${guildId}/bump-stats`),
+
+  // Privacy page (mirrors TheHost's /api/user/* surface).
+  userGuilds: (withData = false) =>
+    apiFetch<ScopeGuild[]>(`/api/user/guilds${withData ? "?with_data=true" : ""}`),
+  exportUserDataUrl: (guildId?: string | null) =>
+    apiUrl(
+      guildId
+        ? `/api/user/data/export?guild_id=${encodeURIComponent(guildId)}`
+        : "/api/user/data/export",
+    ),
+  deleteUserData: (guildId?: string | null) =>
+    apiFetch<DeleteUserDataResponse>("/api/user/data", {
+      method: "DELETE",
+      body: JSON.stringify({ confirm: true, guild_id: guildId ?? null }),
+    }),
 };
 
 /** Build the bot-invite link for a specific guild (explicit click, no popup). */

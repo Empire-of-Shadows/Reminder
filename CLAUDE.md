@@ -106,6 +106,7 @@ FastAPI backend + React 19/TS/Vite SPA, on the shared dashboard_engine (`_engine
 - `auth/panel_role.py` is a thin 3-tier policy (admin/mod/none) over `_engine/auth/panel_access.py`: MANAGE_GUILD verified LIVE on access-gated routes; guild-list probes use `verify_manage_live=False`. Mod tier is read-only.
 - Settings PUT: whitelisted surgical dotted `$set` only (never a full-document write - the bot writes timestamps concurrently) and validates channel/role ids belong to the guild.
 - Discord API reads (bot guilds, bot id, channels, roles) go through the engine `_engine/discord_cache.py` (TTL + single-flight + bounded).
+- `routers/user_data.py` + `services/user_data.py` back the `/me/privacy` page, mirroring TheHost's `/api/user/*` surface (`/user/guilds?with_data=`, `/user/data/export`, `DELETE /user/data`). ImperialReminder has no per-member tracking, so the only account-linked records are `audit_log` entries naming the actor and `entitlements` the user granted or received. Erasure REDACTS the actor identity on audit entries (never drops them - a self-service wipe of the trail would gut the audit log); entitlements are left intact. Both id fields are written as int (admin seam) and str (premium cog), so every filter matches both spellings.
 
 ## Supported Bump Bots
 

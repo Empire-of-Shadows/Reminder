@@ -21,6 +21,7 @@ from dashboard._engine.rate_limit import rate_limit_middleware
 from dashboard._engine.auth.oauth import router as auth_router
 from dashboard.routers.dashboard import router as dashboard_router
 from dashboard.routers.settings import router as settings_router
+from dashboard.routers.user_data import router as user_data_router
 from storage.log import get_logger
 
 # Configure the sinks before anything logs. Without this the process keeps
@@ -103,6 +104,7 @@ app.add_api_route("/auth/csrf", csrf_endpoint, methods=["GET"])
 app.include_router(auth_router, prefix="/auth")
 app.include_router(dashboard_router, prefix="/api")
 app.include_router(settings_router, prefix="/api")
+app.include_router(user_data_router, prefix="/api")
 
 
 @app.get("/health")

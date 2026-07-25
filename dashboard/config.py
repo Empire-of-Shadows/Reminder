@@ -94,6 +94,9 @@ RATE_LIMITS: list[tuple[str, str, int, int]] = [
     ("/api/me", "me", 100, 60),
     ("/api/stats/public", "public_stats", 30, 60),
     ("/api/bot-invite-url", "bot_invite", 30, 60),
+    # Privacy page: export dumps documents and erasure writes them, so both are
+    # kept well below what a human clicking the page can produce.
+    ("/api/user/data", "user_data", 20, 60),
 ]
 
 
