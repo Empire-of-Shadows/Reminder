@@ -2932,6 +2932,14 @@ a:focus-visible {
 .privacy-page .card ul:last-child {
   margin-bottom: 0;
 }
+/* The global reset zeroes list padding, which puts the markers on the card's
+   inner edge. Same indent as .legal-doc. */
+.privacy-page .card ul {
+  padding-left: 1.4rem;
+}
+.privacy-page .card li {
+  margin: 0.35rem 0;
+}
 .privacy-page select,
 .privacy-page input[type="text"] {
   width: 100%;

@@ -60,6 +60,7 @@ export default function PrivacyPage() {
       <div style={{ padding: "0 24px 24px" }}>
         <section className="dash-hero">
           <div className="dash-hero__orb" />
+          <img className="dash-hero__sigil" src="/brand/artifact-belltower.svg" alt="" />
           <div className="dash-hero__copy">
             <span className="dash-hero__eyebrow">Account Control</span>
             <h1 className="dash-hero__title">Privacy &amp; Data</h1>

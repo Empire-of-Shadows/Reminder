@@ -14,6 +14,11 @@ For the technical, commit-level history, see git.
   Erasing strips your name and Discord ID from those entries while leaving the server's record
   that a setting changed - admins keep their history, and it no longer points at you.
 
+- The Settings home page is now the same "Web of Servers" view the Codex and Host dashboards use:
+  your servers are drawn as a live network around the Empire sigil, colour-coded by whether you
+  are an admin or a mod there, with a side panel that opens settings for whichever one you pick.
+  Servers the bot has not joined yet show an invite link instead.
+
 ### Fixed
 - The dashboard's public stats endpoint crashed on every request, so the sign-in page showed no
   server or bump-bot counts.
