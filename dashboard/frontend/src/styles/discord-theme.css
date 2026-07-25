@@ -33,6 +33,14 @@
   --glass-heavy: rgba(255, 255, 255, 0.08);
   --border-subtle: rgba(255, 255, 255, 0.06);
 
+  /* ── TheHost/TheCodex vocabulary ─────────────────────────────────
+     Same tokens under the names the sibling dashboards' stylesheets and
+     markup use, so a page can be kept in sync between them verbatim. */
+  --card: var(--bg-card);
+  --card-bg: var(--bg-card);
+  --card-border: var(--border-subtle);
+  --muted: var(--text-muted);
+
   /* ── Shape ───────────────────────────────────────────────────────── */
   --radius: 14px;
   --radius-sm: 10px;
@@ -2846,12 +2854,19 @@ a:focus-visible {
 .bump-stats .empty-state,
 .dash-section-head + .empty-state { padding: 28px 24px; }
 
-/* ── Accent-barred card (shared with TheHost's privacy page shape) ──── */
+/* ══════════════════════════════════════════════════════════════════════
+   Atoms kept in sync with TheHost's site-theme.css, so pages shared
+   between the two dashboards (currently /me/privacy) render the same.
+   ══════════════════════════════════════════════════════════════════════ */
+
+.muted {
+  color: var(--muted);
+}
 
 .card--accent {
   position: relative;
   overflow: hidden;
-  padding-left: 20px;
+  padding-left: 1.5rem;
 }
 .card--accent::before {
   content: '';
@@ -2863,8 +2878,22 @@ a:focus-visible {
   background: var(--card-accent, var(--brand));
 }
 
-/* ── Confirm modal ──────────────────────────────────────────────────── */
+.btn.ghost {
+  background: transparent;
+  color: var(--text-2);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.btn.ghost:hover {
+  color: var(--text-1);
+  border-color: var(--brand-light);
+  box-shadow: none;
+}
+.btn.small {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.82rem;
+}
 
+/* Confirm modal (TheHost renders the same box with inline styles). */
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -2875,7 +2904,7 @@ a:focus-visible {
   z-index: 100;
 }
 .modal-card {
-  width: 100%;
+  width: 90%;
   max-width: 500px;
 }
 .modal-card:hover {
@@ -2884,42 +2913,47 @@ a:focus-visible {
 
 /* ── Privacy & data page (/me/privacy) ──────────────────────────────── */
 
-.privacy-page .field {
-  margin-bottom: 16px;
-  min-width: 0;
+.privacy-page .dash-hero {
+  margin-bottom: 1.5rem;
 }
-.privacy-page .field > label {
-  display: block;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text-muted);
-  margin-bottom: 6px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+.privacy-page .section {
+  margin-bottom: 2rem;
 }
-.privacy-page .field select,
-.privacy-page .field input[type="text"] {
+.privacy-page .section-title {
+  margin: 0 0 0.75rem;
+  font-size: 1.15rem;
+}
+.privacy-page .card p,
+.privacy-page .card ul {
+  margin: 0 0 0.5rem;
+  line-height: 1.5;
+}
+.privacy-page .card p:last-child,
+.privacy-page .card ul:last-child {
+  margin-bottom: 0;
+}
+.privacy-page select,
+.privacy-page input[type="text"] {
   width: 100%;
-  padding: 8px 10px;
-  border-radius: 6px;
-  border: 1px solid var(--border-subtle);
-  background: rgba(20, 15, 38, 0.6);
+  padding: 0.5rem 0.75rem;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-sm);
   color: var(--text-1);
   font: inherit;
   font-size: 14px;
   outline: none;
-  transition: border-color 0.15s, box-shadow 0.15s;
 }
-.privacy-page .field select:focus,
-.privacy-page .field input[type="text"]:focus {
+.privacy-page select:focus,
+.privacy-page input[type="text"]:focus {
   border-color: var(--brand-light);
-  box-shadow: 0 0 0 3px rgba(125, 74, 255, 0.25);
+  box-shadow: 0 0 0 3px var(--ring);
 }
-.privacy-page .field select option {
+.privacy-page select option {
   background: #1a1a1f;
   color: var(--text-1);
 }
-.privacy-page .card code {
+.privacy-page code {
   padding: 1px 5px;
   border-radius: 4px;
   background: var(--glass-heavy);

@@ -59,6 +59,7 @@ export default function PrivacyPage() {
       <AppHeader user={user} />
       <div style={{ padding: "0 24px 24px" }}>
         <section className="dash-hero">
+          <div className="dash-hero__orb" />
           <div className="dash-hero__copy">
             <span className="dash-hero__eyebrow">Account Control</span>
             <h1 className="dash-hero__title">Privacy &amp; Data</h1>
@@ -69,40 +70,43 @@ export default function PrivacyPage() {
         </section>
 
         {error && (
-          <div className="alert danger" role="alert" style={{ marginTop: 16 }}>
+          <div className="alert danger" role="alert">
             {error}
           </div>
         )}
 
-        <section className="section card" style={{ marginTop: 16 }}>
-          <h2 className="section-title" style={{ marginTop: 0 }}>No personal tracking</h2>
+        <section
+          className="section card card--accent"
+          style={{ ["--card-accent" as string]: "var(--brand)" } as React.CSSProperties}
+        >
+          <h2 className="section-title">No personal tracking</h2>
           <p className="muted">
             Imperial Reminder is a bump-reminder bot. It does <strong>not</strong> track
             individual members - no messages, no activity, no profiles. There are no stats
             or leaderboards to opt out of.
           </p>
-        </section>
-
-        <section className="section card" style={{ marginTop: 16 }}>
-          <h2 className="section-title" style={{ marginTop: 0 }}>What it does store</h2>
-          <p className="muted">For each server, the bot keeps only its setup:</p>
-          <ul className="muted" style={{ marginTop: 0 }}>
-            <li>Which bump bots to track and when each was last bumped</li>
-            <li>The bump channel, the reminder role to ping, and the timers channel</li>
-            <li>Your custom reminder message, and which roles can manage these settings</li>
-          </ul>
           <p className="muted">
             The only records tied to <em>you personally</em> are the audit entries written
             when you change a server's settings, plus any premium grants involving your
             account. Those are what the tools below cover.
           </p>
+        </section>
+
+        <section className="section card">
+          <h2 className="section-title">What it does store</h2>
+          <p className="muted">For each server, the bot keeps only its setup:</p>
+          <ul className="muted">
+            <li>Which bump bots to track and when each was last bumped</li>
+            <li>The bump channel, the reminder role to ping, and the timers channel</li>
+            <li>Your custom reminder message, and which roles can manage these settings</li>
+          </ul>
           <p className="muted">
             Server managers can change the setup any time on the <strong>Settings</strong> page.
           </p>
         </section>
 
-        <section className="section card" style={{ marginTop: 16 }}>
-          <h2 className="section-title" style={{ marginTop: 0 }}>Signing in</h2>
+        <section className="section card">
+          <h2 className="section-title">Signing in</h2>
           <p className="muted">
             Logging in uses Discord to confirm who you are and which servers you can manage.
             That sign-in session is shared across the Empire of Shadows dashboards and expires
@@ -111,12 +115,12 @@ export default function PrivacyPage() {
         </section>
 
         {!user && checkedAuth && (
-          <section className="section card" style={{ marginTop: 16 }}>
-            <h2 className="section-title" style={{ marginTop: 0 }}>Your data</h2>
+          <section className="section card">
+            <h2 className="section-title">Your data</h2>
             <p className="muted">
               Sign in with Discord to export or erase the records tied to your account.
             </p>
-            <a className="btn btn-primary" href={discordLoginUrl("/me/privacy")}>
+            <a className="btn small" href={discordLoginUrl("/me/privacy")}>
               Sign in with Discord
             </a>
           </section>
@@ -124,29 +128,26 @@ export default function PrivacyPage() {
 
         {user && (
           <>
-            <section className="section card" style={{ marginTop: 16 }}>
-              <h2 className="section-title" style={{ marginTop: 0 }}>Data scope</h2>
+            <section className="section card">
+              <h2 className="section-title">Data scope</h2>
               <p className="muted">
-                Choose whether export and erase cover every server or just one. Only servers
+                Choose whether export and erase cover all servers or a single one. Only servers
                 that actually hold a record of yours are listed.
               </p>
-              <div className="field">
-                <label htmlFor="privacy-scope">Servers</label>
-                <select
-                  id="privacy-scope"
-                  value={scopeGuildId}
-                  onChange={(e) => setScopeGuildId(e.target.value)}
-                >
-                  <option value="">All servers</option>
-                  {guilds.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.name ?? `Server ${g.id}`}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <select
+                value={scopeGuildId}
+                onChange={(e) => setScopeGuildId(e.target.value)}
+                aria-label="Data scope"
+              >
+                <option value="">All servers</option>
+                {guilds.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name ?? `Server ${g.id}`}
+                  </option>
+                ))}
+              </select>
               {guilds.length === 0 && (
-                <p className="muted" style={{ marginBottom: 0 }}>
+                <p className="muted" style={{ marginTop: "0.75rem" }}>
                   No server currently holds a record naming you.
                 </p>
               )}
@@ -154,17 +155,18 @@ export default function PrivacyPage() {
 
             <section
               className="section card card--accent"
-              style={{ marginTop: 16, ["--card-accent" as string]: "var(--success)" } as React.CSSProperties}
+              style={{ ["--card-accent" as string]: "var(--success)" } as React.CSSProperties}
             >
-              <h2 className="section-title" style={{ marginTop: 0 }}>Export data</h2>
+              <h2 className="section-title">Export data</h2>
               <p className="muted">
                 Download a JSON file with every record Imperial Reminder holds against your
                 account in {scopeLabel}.
               </p>
               <a
                 href={api.exportUserDataUrl(scopeGuildId || null)}
-                className="btn btn-secondary"
+                className="btn small"
                 download
+                style={{ marginTop: "0.75rem" }}
               >
                 Download my data
               </a>
@@ -172,9 +174,9 @@ export default function PrivacyPage() {
 
             <section
               className="section card card--accent"
-              style={{ marginTop: 16, ["--card-accent" as string]: "var(--danger)" } as React.CSSProperties}
+              style={{ ["--card-accent" as string]: "var(--danger)" } as React.CSSProperties}
             >
-              <h2 className="section-title" style={{ marginTop: 0, color: "var(--danger)" }}>
+              <h2 className="section-title" style={{ color: "var(--danger)" }}>
                 Erase my data
               </h2>
               <p className="muted">
@@ -183,13 +185,15 @@ export default function PrivacyPage() {
                 on that history - but it no longer points at you. Premium grants stay; they are
                 grant records, not personal data. This cannot be undone.
               </p>
-              <button className="btn btn-danger" onClick={() => setShowDeleteModal(true)}>
+              <button
+                className="btn"
+                style={{ background: "var(--danger)", marginTop: "0.75rem" }}
+                onClick={() => setShowDeleteModal(true)}
+              >
                 Erase my data...
               </button>
               {eraseResult && (
-                <p style={{ marginTop: 12, marginBottom: 0, color: "var(--success)" }}>
-                  {eraseResult}
-                </p>
+                <p style={{ marginTop: "0.75rem", color: "var(--success)" }}>{eraseResult}</p>
               )}
             </section>
           </>
@@ -208,23 +212,22 @@ export default function PrivacyPage() {
             <h3 id="privacy-erase-title" style={{ marginTop: 0 }}>
               Erase your data in {scopeLabel}?
             </h3>
-            <p className="muted">
+            <p>
               Type <code>DELETE</code> to confirm. This removes your name and Discord ID from
               every audit entry tied to your account in {scopeLabel}.
             </p>
-            <div className="field">
-              <input
-                type="text"
-                value={confirmText}
-                onChange={(e) => setConfirmText(e.target.value)}
-                placeholder="Type DELETE"
-                aria-label="Type DELETE to confirm"
-                autoFocus
-              />
-            </div>
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <input
+              type="text"
+              value={confirmText}
+              onChange={(e) => setConfirmText(e.target.value)}
+              placeholder="Type DELETE"
+              aria-label="Type DELETE to confirm"
+              autoFocus
+              style={{ marginBottom: "1rem" }}
+            />
+            <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
               <button
-                className="btn btn-secondary"
+                className="btn ghost"
                 onClick={() => {
                   setShowDeleteModal(false);
                   setConfirmText("");
@@ -233,7 +236,8 @@ export default function PrivacyPage() {
                 Cancel
               </button>
               <button
-                className="btn btn-danger"
+                className="btn"
+                style={{ background: "var(--danger)" }}
                 disabled={confirmText !== "DELETE" || erasing}
                 onClick={() => void runErase()}
               >
