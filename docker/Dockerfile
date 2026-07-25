@@ -11,7 +11,7 @@ RUN apt-get update && \
 
 WORKDIR /app
 
-ARG GIT_REF=Dev
+ARG GIT_REF=main
 
 # Clone from public repo
 RUN git clone --depth 1 --branch "${GIT_REF}" https://github.com/Empire-of-Shadows/reminder.git .

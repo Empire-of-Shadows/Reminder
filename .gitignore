@@ -49,9 +49,9 @@ dashboard/frontend/dist/
 *~
 .DS_Store
 
-# Logs
+# Logs (runtime output only - do NOT use a bare `log/`, it matches the
+# vendored `storage/log/` source package and silently drops it from the repo)
 logs/
-log/
 *.log
 
 # Database

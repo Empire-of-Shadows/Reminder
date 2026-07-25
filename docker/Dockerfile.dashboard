@@ -1,7 +1,7 @@
 ## Stage 1: Clone repo and build the Vite/React frontend
 FROM node:22-slim AS frontend
 
-ARG GIT_REF=Dev
+ARG GIT_REF=main
 ARG REPO_URL=https://github.com/Empire-of-Shadows/reminder.git
 
 RUN apt-get update && \

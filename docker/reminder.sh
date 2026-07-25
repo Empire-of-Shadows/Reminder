@@ -15,10 +15,11 @@ DASH_IMAGE="imperial-reminder-dashboard"
 BACKUP_TAG_BOT="imperial-reminder:backup"
 BACKUP_TAG_DASH="imperial-reminder-dashboard:backup"
 HEALTH_CHECK_TIMEOUT=120  # seconds to wait for health check
+LOG_TAIL_LINES=200        # lines of container logs to show when a launch fails
 
 NO_CACHE=0
 # Git branch to build from. Override at runtime with -b/--branch.
-BRANCH=Dev
+BRANCH=main
 while [ $# -gt 0 ]; do
     case "$1" in
         -n|--no-cache)
@@ -91,6 +92,50 @@ check_container_health() {
     return 1
 }
 
+# Function to dump diagnostics for a failed launch.
+# Must run BEFORE rollback - `docker compose down` destroys the containers and their logs.
+dump_failure_logs() {
+    local reason=$1
+
+    echo ""
+    echo "=============================================="
+    echo "DEPLOYMENT FAILED: $reason"
+    echo "=============================================="
+
+    echo ""
+    echo "--- Container status ---"
+    docker compose ps -a 2>/dev/null || echo "  (docker compose ps unavailable)"
+
+    for container in "$BOT_CONTAINER" "$DASH_CONTAINER"; do
+        echo ""
+        echo "--- $container: state ---"
+        if ! docker inspect "$container" \
+            --format='  status={{.State.Status}} exitcode={{.State.ExitCode}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} oomkilled={{.State.OOMKilled}}{{if .State.Error}}
+  error={{.State.Error}}{{end}}' 2>/dev/null; then
+            echo "  container not found (it may have failed to be created)"
+            continue
+        fi
+
+        # Last healthcheck probe output - usually says exactly why /health is failing
+        local probe
+        probe=$(docker inspect "$container" \
+            --format='{{if .State.Health}}{{range $i, $e := .State.Health.Log}}{{if $e}}exit={{$e.ExitCode}} out={{$e.Output}}
+{{end}}{{end}}{{end}}' 2>/dev/null | tail -n 3)
+        if [ -n "$probe" ]; then
+            echo "--- $container: last healthcheck probes ---"
+            echo "$probe"
+        fi
+
+        echo "--- $container: last $LOG_TAIL_LINES log lines ---"
+        docker logs --tail "$LOG_TAIL_LINES" "$container" 2>&1 || echo "  (no logs available)"
+    done
+
+    echo ""
+    echo "=============================================="
+    echo "End of failure diagnostics"
+    echo "=============================================="
+}
+
 # Function to rollback to previous version
 rollback() {
     echo "Rolling back to previous version..."
@@ -118,7 +163,7 @@ rollback() {
     if $rollback_ok; then
         echo "Rollback completed successfully"
     else
-        echo "Rollback failed - one or more containers unhealthy"
+        dump_failure_logs "rollback failed - one or more containers unhealthy"
         exit 1
     fi
 }
@@ -191,8 +236,9 @@ if $BUILD_CMD; then
     echo "--- Waiting for health checks ---"
 
     all_healthy=true
-    check_container_health "$BOT_CONTAINER" || all_healthy=false
-    check_container_health "$DASH_CONTAINER" || all_healthy=false
+    failed_containers=""
+    check_container_health "$BOT_CONTAINER" || { all_healthy=false; failed_containers="$BOT_CONTAINER"; }
+    check_container_health "$DASH_CONTAINER" || { all_healthy=false; failed_containers="${failed_containers:+$failed_containers, }$DASH_CONTAINER"; }
 
     if $all_healthy; then
         echo ""
@@ -211,14 +257,16 @@ if $BUILD_CMD; then
         echo "================================="
         docker compose logs -f
     else
+        dump_failure_logs "health check failed for: $failed_containers"
         echo ""
-        echo "Health check failed, initiating rollback..."
+        echo "Initiating rollback..."
         rollback
         exit 1
     fi
 else
+    dump_failure_logs "build/start failed (docker compose up returned non-zero)"
     echo ""
-    echo "Failed to build/start containers, initiating rollback..."
+    echo "Initiating rollback..."
     rollback
     exit 1
 fi

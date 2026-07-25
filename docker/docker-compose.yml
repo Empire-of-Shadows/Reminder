@@ -5,7 +5,7 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        - GIT_REF=${GIT_REF:-Dev}
+        - GIT_REF=${GIT_REF:-main}
     env_file:
       - .env
     container_name: reminder
@@ -35,7 +35,7 @@ services:
       context: .
       dockerfile: Dockerfile.dashboard
       args:
-        - GIT_REF=${GIT_REF:-Dev}
+        - GIT_REF=${GIT_REF:-main}
     env_file:
       - .env
     environment:
