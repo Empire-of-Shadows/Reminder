@@ -445,7 +445,7 @@ class AdminCog(commands.Cog):
                 await self._handle_inline_modal(
                     child_interaction, child, category_node, guild,
                     summary_map, on_child_select, on_back,
-                    refresh_parent=refresh_nav,
+                    refresh_parent=refresh_nav, session=session,
                 )
             else:
                 # Navigate within message 2 (edit in-place)
@@ -722,7 +722,7 @@ class AdminCog(commands.Cog):
                 await self._handle_inline_modal(
                     sel_interaction, child, node, guild,
                     summary_map, on_select, on_cancel,
-                    refresh_parent=refresh_parent,
+                    refresh_parent=refresh_parent, session=session,
                 )
             else:
                 # Navigate within message 2 (edit=True)
@@ -1816,7 +1816,7 @@ class AdminCog(commands.Cog):
 
     async def _handle_inline_modal(
         self, sel_interaction, child, parent_menu, guild, summary_map, on_select, on_cancel,
-        *, refresh_parent: Callable[[], Awaitable[None]] | None = None,
+        *, refresh_parent: Callable[[], Awaitable[None]] | None = None, session=None,
     ):
         """Handle a modal_input child selected from a menu dropdown."""
         current_str = ""
