@@ -187,6 +187,7 @@ async def guild_roles(guild_id: str, _session: dict = Depends(require_panel_acce
 
 # ── Public stats (unauthenticated, cached) ───────────────────────────────
 
+_CACHE_TTL = 300.0
 _stats_cache: dict[str, object] = {"data": None, "ts": 0.0}
 
 
