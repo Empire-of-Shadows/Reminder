@@ -3,6 +3,17 @@
 All notable, community-facing changes to ImperialReminder are recorded here in plain language.
 For the technical, commit-level history, see git.
 
+## [Unreleased] - 2026-07-26
+
+### Fixed
+- The `/admin` panel's setup progress was counting things you cannot actually configure. Screens
+  and buttons that only show information or run an action - such as the premium **Status** view -
+  were being added to each category's "X of Y configured" total, so a category could never read
+  as finished no matter how much you set up. Only real settings count now, and a category that
+  holds nothing but action screens just shows its name instead of a meaningless total.
+- A list you had not put anything in yet was being counted as configured. An empty list now
+  correctly reads as still needing setup.
+
 ## [Unreleased] - 2026-07-23
 
 ### Added

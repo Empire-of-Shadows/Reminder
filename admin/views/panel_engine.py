@@ -837,27 +837,58 @@ class _PanelDualInputModal(discord.ui.Modal):
         )
 
 
+# Summary strings that mean "this setting has no value yet".
+_UNSET_SUMMARIES = ("Not configured", "Not set", "Not assigned", "Empty")
+
+
+def _counts_toward_progress(node: PanelNode) -> bool:
+    """True when a node is a setting an admin can give a value to.
+
+    Read-only screens and one-shot commands (kind="action" - View Status,
+    Export, Reset, Purge) have no stored value, so they can never read as
+    configured and must not inflate the category badge.
+    """
+    if node.kind == "action":
+        return False
+    if node.kind == "menu":
+        # A toggle-only menu is a real on/off setting. A menu with children is
+        # a container - its children are counted individually. A menu with
+        # neither is a label-only stub.
+        return bool(node.toggle_get) and not node.children
+    return True
+
+
 def _compact_category_summary(
     cat_node: PanelNode,
     cat_summaries: dict[str, str | dict[str, str]],
-    toggle: bool | None,
 ) -> str:
-    """Build a one-line compact summary for a category."""
-    # Count configured leaf values
+    """Build a one-line compact summary for a category.
+
+    Counts only configurable settings - see ``_counts_toward_progress``.
+    Returns "" when the category holds no settable items at all, so the caller
+    can render the label on its own instead of a meaningless "0 of 0".
+    """
     configured = 0
     total = 0
     for child_key, child_node in cat_node.children.items():
-        val = cat_summaries.get(child_key, "Not configured")
+        val = cat_summaries.get(child_key)
         if isinstance(val, dict):
-            for sub_val in val.values():
+            for sub_key, sub_val in val.items():
+                sub_node = child_node.children.get(sub_key)
+                if sub_node is None or not _counts_toward_progress(sub_node):
+                    continue
                 total += 1
-                if sub_val not in ("Not configured", "Not set", "Not assigned"):
+                if sub_val not in _UNSET_SUMMARIES:
                     configured += 1
         else:
+            if not _counts_toward_progress(child_node):
+                continue
             total += 1
-            if val not in ("Not configured", "Not set", "Not assigned"):
+            if (val or "Not configured") not in _UNSET_SUMMARIES:
                 configured += 1
 
+    if total == 0:
+        return ""
     if configured == 0:
         return "Not configured"
     return f"{configured} of {total} configured"
@@ -909,13 +940,16 @@ def build_overview_view(
             lock_prefix = "\U0001f512 " if cat_key in _locked else ""
             toggle = toggle_states.get(cat_key)
 
-            summary = _compact_category_summary(cat_node, cat_summaries, toggle)
+            summary = _compact_category_summary(cat_node, cat_summaries)
             cat_label = _effective_label(cat_node, is_premium)
             if toggle is not None:
                 status = "Enabled" if toggle else "Disabled"
-                lines.append(f"**{lock_prefix}{cat_label}** - {status} ({summary})")
-            else:
+                suffix = f" ({summary})" if summary else ""
+                lines.append(f"**{lock_prefix}{cat_label}** - {status}{suffix}")
+            elif summary:
                 lines.append(f"**{lock_prefix}{cat_label}** - {summary}")
+            else:
+                lines.append(f"**{lock_prefix}{cat_label}**")
 
         detail_items.append(discord.ui.TextDisplay("\n".join(lines)))
     else:
@@ -938,9 +972,15 @@ def build_overview_view(
                 if isinstance(val, dict):
                     lines.append(f"  {child_label_2}:")
                     for sub_key, sub_node in child_node.children.items():
-                        sub_val = val.get(sub_key, "Not configured")
                         sub_label = _effective_label(sub_node, is_premium)
+                        # Read-only screens and one-shot commands hold no value.
+                        if sub_node.kind == "action":
+                            lines.append(f"    \u2022 {sub_label}")
+                            continue
+                        sub_val = val.get(sub_key, "Not configured")
                         lines.append(f"    \u2022 {sub_label}: {sub_val}")
+                elif child_node.kind == "action":
+                    lines.append(f"  \u2022 {child_label_2}")
                 else:
                     lines.append(f"  \u2022 {child_label_2}: {val}")
 
