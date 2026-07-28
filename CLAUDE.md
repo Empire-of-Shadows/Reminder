@@ -21,6 +21,8 @@ Four engine masters in `EmpireSystems/` are vendored into this repo. Files carry
 
 Drift is gated with each tool's `--check --bot reminder`; all four report a real green (no `[PENDING-MIGRATION]`).
 
+"Not set up yet" messages come from the engine `admin/setup_notice.py` - never hand-write one. Besides the panel breadcrumb it names WHO can open the panel, which on a fresh guild is only the owner and Manage Server holders. This bot labels that panel category **Panel Access** rather than the engine's default "Role Configuration", so `admin/settings/bindings.py` sets `ROLE_ACCESS_PATH` to override the breadcrumb. Both consumers (the bump handler's unconfigured-bump nudge and the `check_or_notify` gate) go through it; the gate imports it lazily because `admin/__init__` pulls the panel engine, which reads back into storage.
+
 ## Running the Bot
 
 ### Local Development

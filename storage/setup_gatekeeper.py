@@ -47,18 +47,29 @@ class SetupGatekeeper:
         return await self._gate.is_complete(guild_id)
 
     async def check_or_notify(self, interaction: discord.Interaction) -> bool:
+        """Guard a slash command behind completed setup.
+
+        Currently unused: this bot has no user-facing commands to guard (its only
+        commands are /admin panel and the portable premium package). Kept wired and
+        correct so the first command that needs gating can just call it, and so its
+        wording cannot drift from the nudge the bump handler sends.
+        """
         if not interaction.guild:
             return True
         if await self.is_setup_complete(interaction.guild.id):
             return True
 
-        embed = discord.Embed(
+        # Deferred: admin/__init__ pulls in the whole panel engine, which reads back
+        # into storage - importing it at module scope here would close a cycle.
+        from admin.setup_notice import setup_notice_embed
+
+        embed = await setup_notice_embed(
+            interaction.guild,
+            what="bump reminders",
+            path="Core Setup",
+            viewer=interaction.user if isinstance(interaction.user, discord.Member) else None,
+            detail="Reminders stay off until a **Bump Channel** and **Bump Role** are set.",
             title="Setup Required",
-            description=(
-                "Reminders are disabled until setup is complete.\n\n"
-                "**Required:**\n• Bump Channel\n• Bump Role\n\n**Fix:** `/admin panel`"
-            ),
-            color=discord.Color.orange(),
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return False

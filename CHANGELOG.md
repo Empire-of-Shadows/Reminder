@@ -3,6 +3,24 @@
 All notable, community-facing changes to ImperialReminder are recorded here in plain language.
 For the technical, commit-level history, see git.
 
+## [Unreleased] - 2026-07-27
+
+### Added
+- **The bot now speaks up when it has not been set up.** Until today, a server that added
+  Imperial Reminder but never picked a bump channel got complete silence - people would bump,
+  nothing would happen, and there was no message, no error and nothing to explain why. Now, when
+  a bump goes through on a server that has not finished setup, the bot posts once to say it saw
+  the bump, that no reminder was scheduled, and exactly where to fix it: `/admin panel` ->
+  **Core Setup**.
+- That message also says **who** can fix it. On a server that has not handed out panel access
+  yet, only the owner and people with Manage Server can open the panel, so the message names the
+  owner rather than telling everyone else to run a command they cannot use - and points the owner
+  at **Panel Access** so they can let their staff help.
+- It cannot become nagging. The notice appears at most once per day per server, only after a real
+  bump from a bump bot the bot recognises (a message that merely says "bump done" can never
+  trigger it), and it stays quiet if it lacks permission to post in that channel. Once a bump
+  channel is set, it never appears again.
+
 ## [Unreleased] - 2026-07-26
 
 ### Fixed

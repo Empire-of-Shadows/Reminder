@@ -16,11 +16,17 @@ from storage.sub_systems.bump_config import (
     SUCCESS_KEYWORDS, BUMP_BOTS_INFO
 )
 from storage.log import get_logger
+from admin.setup_notice import setup_notice_embed
 
 logger = get_logger("BumpHandler")
 
 # Keep normalization simple and safe for Unicode
 _ZWSP_RE = re.compile(r"[\u200B-\u200D\uFEFF]")
+
+# How long to stay quiet after telling a guild it is not set up. Long enough that
+# the notice can never read as nagging, short enough that a server which comes
+# back to it tomorrow is reminded rather than left guessing.
+_SETUP_NUDGE_INTERVAL = 24 * 60 * 60
 
 class BumpHandler(commands.Cog):
     def __init__(self, bot):
@@ -31,6 +37,10 @@ class BumpHandler(commands.Cog):
         # Track processed bumps: (guild_id, bot_name) -> timestamp
         self._processed_bumps = {}
         self._bump_cooldown = 5.0  # seconds to ignore duplicate bump detections
+        # Guilds already told they are unconfigured: guild_id -> timestamp.
+        # In memory on purpose - a restart costing one extra nudge is a better
+        # trade than a database write on a path that exists to be rare.
+        self._setup_nudged = {}
 
     async def cog_unload(self):
         """Cancel pending 10s batch-send tasks so reload/shutdown never orphans them."""
@@ -54,6 +64,70 @@ class BumpHandler(commands.Cog):
         if application_id and application_id in BUMP_BOTS_INFO:
             return BUMP_BOTS_INFO[application_id]
         return None
+
+    def _setup_nudge_due(self, guild_id: int) -> bool:
+        """Cheap pre-check: is this guild outside its nudge cooldown?
+
+        Read-only, so it can gate the text extraction before the real claim in
+        ``_maybe_nudge_unconfigured`` decides to send.
+        """
+        last = self._setup_nudged.get(guild_id)
+        return last is None or (time.time() - last) >= _SETUP_NUDGE_INTERVAL
+
+    async def _maybe_nudge_unconfigured(self, message, config) -> None:
+        """Tell a server that bumped but never finished setup why nothing happened.
+
+        Without this the bot is completely silent before setup: no bump channel is
+        configured, so no channel ever matches and the guild gets no reminders and
+        no explanation. This fires only on a real success message from a bot we
+        recognise by id (keywords alone can never trigger it, same forgery rule as
+        detection), and at most once per guild per day so it can never become spam.
+        """
+        guild = message.guild
+        now = time.time()
+
+        last = self._setup_nudged.get(guild.id)
+        if last is not None and now - last < _SETUP_NUDGE_INTERVAL:
+            return
+
+        # Claim the slot before doing any work, so two bumps landing together
+        # cannot both get through and double-post.
+        self._setup_nudged[guild.id] = now
+
+        # Opportunistic prune - the map only grows on unconfigured guilds, but it
+        # should not grow forever.
+        if len(self._setup_nudged) > 1000:
+            cutoff = now - _SETUP_NUDGE_INTERVAL
+            for gid, ts in list(self._setup_nudged.items()):
+                if ts < cutoff:
+                    self._setup_nudged.pop(gid, None)
+
+        perms = message.channel.permissions_for(guild.me)
+        if not (perms.send_messages and perms.embed_links):
+            logger.info(
+                f"[{guild.id}] Skipping setup nudge in channel {message.channel.id} - "
+                "missing Send Messages or Embed Links"
+            )
+            return
+
+        try:
+            embed = await setup_notice_embed(
+                guild,
+                what="bump reminders",
+                path="Core Setup",
+                detail=(
+                    "I saw that bump, but I am not set up here yet, so no reminder "
+                    "was scheduled. Set a **Bump Channel** and **Bump Role** and I "
+                    "will start reminding you."
+                ),
+                title="Bump Detected - Setup Required",
+            )
+            await message.channel.send(embed=embed)
+            logger.info(f"[{guild.id}] Sent setup nudge after an unconfigured bump")
+        except discord.Forbidden:
+            logger.info(f"[{guild.id}] Forbidden sending setup nudge")
+        except discord.HTTPException as e:
+            logger.warning(f"[{guild.id}] Failed to send setup nudge: {e}")
 
     def _is_bump_recently_processed(self, guild_id: int, bot_name: str) -> bool:
         """
@@ -87,17 +161,32 @@ class BumpHandler(commands.Cog):
             return
 
         config = await self.bot.guild_config_manager.get_config(message.guild.id)
-        if not config or message.channel.id != config.bump_channel:
+        if not config:
             return
 
-        enabled_bots = config.enabled_bots
-
-        # Resolve via author or webhook (for application webhook posts)
+        # Resolve via author or webhook (for application webhook posts). This is a
+        # dict lookup on an id, so it is cheap enough to run before the channel
+        # check - which lets an unconfigured guild still be recognised below
+        # without paying for text extraction on every message in the server.
         bot_info = self._resolve_bot_info(
             author_id=getattr(message.author, "id", None),
             webhook_id=getattr(message, "webhook_id", None),
             application_id=None,
         )
+
+        if not config.bump_channel:
+            # Never configured: no channel can match, so the guild would otherwise
+            # get silence forever. Speak up once when a real bump lands.
+            if bot_info and self._setup_nudge_due(message.guild.id):
+                text = await self.extract_all_text(message, allow_refetch=True)
+                if any(keyword in text for keyword in SUCCESS_KEYWORDS):
+                    await self._maybe_nudge_unconfigured(message, config)
+            return
+
+        if message.channel.id != config.bump_channel:
+            return
+
+        enabled_bots = config.enabled_bots
 
         # Try to grab all text (embeds + content + components); if nothing found, refetch once
         text = await self.extract_all_text(message, allow_refetch=True)

@@ -1,4 +1,4 @@
-"""ImperialReminder — admin engine bindings (the per-bot seam).
+"""ImperialReminder - admin engine bindings (the per-bot seam).
 
 The vendored engine (``admin_cog.py``) is byte-identical across every bot; it reaches all of
 ImperialReminder's backends through the names defined here. See
@@ -35,8 +35,13 @@ logger = get_logger("AdminBindings")
 
 BOT_NAME = "Imperial Reminder"
 
-# ImperialReminder gates the panel on Manage Server only (no mod tier) — kept empty.
+# ImperialReminder gates the panel on Manage Server only (no mod tier) - kept empty.
 MOD_ALLOWED_CATEGORIES: set[str] = set(role_auth.MOD_ALLOWED_CATEGORIES)
+
+# Breadcrumb the engine's setup notices use when telling an owner where to delegate
+# panel access. This bot labels that category "Panel Access"; the engine default
+# ("Role Configuration") matches the other bots' trees, so it is overridden here.
+ROLE_ACCESS_PATH = "Panel Access -> Panel Access Roles"
 
 # OVERVIEW_FOOTER / SETUP_GUIDE_TEXT are re-exported from panel_branding above.
 
