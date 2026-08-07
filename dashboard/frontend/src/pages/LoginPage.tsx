@@ -33,7 +33,16 @@ export default function LoginPage() {
           Login with Discord
         </a>
         <p className="muted" style={{ marginTop: "0.75rem", fontSize: "0.85rem" }}>
-          By signing in you agree to our <Link to="/privacy">Privacy Policy</Link>.
+          One login covers every Empire of Shadows dashboard, so by signing in you agree to the{" "}
+          <a
+            href="https://eosofficial.club/privacy"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Empire of Shadows Privacy Policy
+          </a>
+          , which covers every bot, dashboard, and tool in the ecosystem. Imperial Reminder has its
+          own <Link to="/privacy">privacy page</Link> for the detail specific to this bot.
         </p>
 
         <div className="login-divider">Explore the ecosystem</div>

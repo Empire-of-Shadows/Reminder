@@ -3,6 +3,58 @@
 All notable, community-facing changes to ImperialReminder are recorded here in plain language.
 For the technical, commit-level history, see git.
 
+## [Unreleased] - 2026-08-05
+
+### Added
+- **Create roles and channels straight from the picker.** Every role and channel picker in the
+  admin panel now carries a Create button: type a name and the new role or channel is created and
+  selected in one step, without leaving the panel. The button first checks that the bot itself is
+  allowed to create it and tells you which permission is missing instead of failing afterwards.
+  Text channel names follow Discord's rules (lowercase letters, digits and dashes), and a rejected
+  name comes back with a Try Again button that keeps what you typed.
+- **Pick a category when creating a channel.** The Create Channel button in the admin panel now
+  lets you choose which category the new channel goes under - or leave the picker empty to create
+  it at the top of the channel list. If something goes wrong, Try Again keeps both the name you
+  typed and the category you picked.
+
+### Changed
+- **The panel now refuses roles that would not actually work.** The pickers that decide who can
+  open the admin panel no longer accept @everyone or roles managed by an integration (bot roles,
+  booster roles) - membership of those is outside the server's control, so allowing them would
+  open the panel wider than intended. Regular admin roles still work, including ones that sit
+  above the bot. Every refusal explains itself.
+
+## [Unreleased] - 2026-08-02
+
+### Added
+- **There is now a `/help` command.** Imperial Reminder mostly works in the background, which
+  made it hard to tell what it was doing or whether it was doing anything at all. `/help` opens a
+  short guide you can page through with a dropdown: what the bot does, how a bump turns into a
+  countdown and then into a ping, which listing sites it can watch, and what premium adds. Only
+  you can see it, and there is a button straight to the web dashboard.
+- Server admins see an extra **Admin** section in that guide covering `/admin panel`, what each
+  part of the panel is for, and the two settings - a bump channel and a bump role - that have to
+  be set before any reminders run.
+
+## [Unreleased] - 2026-08-01
+
+### Fixed
+- **The privacy policy said the bot does not read your messages. That was not true.** Imperial
+  Reminder has to read messages in your bump channel - that is the only way it can spot a bump
+  bot's "bump done" message and start the timer. It reads nothing outside that one channel, it
+  never puts that text in its database, and it still does not track individual members. The policy
+  now says exactly that instead of claiming the bot reads nothing, and it also notes that the text
+  it reads shows up in the operational log used for troubleshooting.
+
+### Changed
+- **The policy you agree to when you sign in now covers every Empire of Shadows service.** One
+  login signs you in to all of the bot dashboards, but the login screen only ever pointed at
+  Imperial Reminder's own privacy policy, which does not describe what the other bots do with
+  your data. Signing in now points you to a single combined Empire of Shadows privacy policy
+  covering every bot, dashboard and tool. Imperial Reminder's own privacy page has not gone
+  anywhere - it is linked from the same line and from the footer, and still holds the detail
+  specific to this bot.
+
 ## [Unreleased] - 2026-07-27
 
 ### Added

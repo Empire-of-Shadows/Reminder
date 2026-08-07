@@ -8,10 +8,10 @@ import AppHeader from "../components/AppHeader";
  * Public, unauthenticated privacy policy page.
  *
  * Follows the ecosystem "standard" (TheCodex / TheHost): a `dash-hero` header
- * over a numbered `legal-doc` body. Renders without a session — it tries to
+ * over a numbered `legal-doc` body. Renders without a session - it tries to
  * load the signed-in user only to personalise the header, and ignores failures.
  */
-const EFFECTIVE_DATE = "June 8, 2026";
+const EFFECTIVE_DATE = "August 1, 2026";
 
 export default function PrivacyPolicyPage() {
   const [user, setUser] = useState<User | null>(null);
@@ -39,8 +39,10 @@ export default function PrivacyPolicyPage() {
               This policy explains what data Imperial Reminder ("the bot", "we", "us") collects
               when you use the bot or the web dashboard, how we use it, and the choices you have.
               Imperial Reminder is part of the Empire of Shadows ecosystem and is a bump-reminder
-              bot: it reminds your server to bump on listing sites. It does <strong>not</strong>{" "}
-              read or store the content of your messages and does not track individual members.
+              bot: it reminds your server to bump on listing sites. To notice that a bump happened
+              it has to read messages in the one channel you set as your bump channel, so it can
+              spot a bump bot's success message. It does <strong>not</strong> keep that text in its
+              database and does not track individual members.
             </p>
           </section>
 
@@ -64,8 +66,12 @@ export default function PrivacyPolicyPage() {
               <li><strong>A session cookie</strong> that keeps you signed in to the dashboard.</li>
             </ul>
             <p className="muted">
-              We do not read or store message content, and we do not track individual members'
-              messages, activity, or profiles — there is nothing personal to opt out of.
+              The bot reads messages in your configured bump channel so it can recognise a bump
+              bot's success message. That text is not written to the database and nothing about it
+              is tied to your account. It is written to the server's own operational log, which we
+              use for troubleshooting; only the bump channel is read this way, and no other channel
+              in your server is. We do not track individual members' messages, activity, or
+              profiles, so there is nothing personal to opt out of.
             </p>
           </section>
 
