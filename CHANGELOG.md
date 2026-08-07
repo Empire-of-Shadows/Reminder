@@ -3,6 +3,20 @@
 All notable, community-facing changes to ImperialReminder are recorded here in plain language.
 For the technical, commit-level history, see git.
 
+## [Unreleased] - 2026-08-06
+
+### Changed
+- **The separate moderator access level is gone.** Imperial Reminder used to have two kinds of
+  access: admin roles that could change settings, and mod roles that could look at them without
+  changing anything. There is now only one. The admin panel and the web dashboard both require
+  the Manage Server permission or a role listed under **Panel Access Roles** - anyone else cannot
+  open them, view them, or change anything. If your server relied on mod roles for a read-only
+  look at the settings, add those roles to Panel Access Roles to give them full access, or leave
+  them out.
+- **Panel Access Roles is now its own entry on the admin panel.** With the mod picker gone there
+  was only one setting left inside the old **Panel Access** menu, so it moved up to the panel's
+  front screen next to Core Setup - one click instead of two.
+
 ## [Unreleased] - 2026-08-05
 
 ### Added

@@ -44,13 +44,8 @@ export default function SettingsPage() {
   }, [guildId]);
 
   const enabled = useMemo(() => new Set(settings?.enabled_bots ?? []), [settings]);
-  const readOnly = settings?.panel_role === "mod";
   const adminRoleIds = useMemo(
     () => new Set(settings?.roles?.admin_role_ids ?? []),
-    [settings],
-  );
-  const modRoleIds = useMemo(
-    () => new Set(settings?.roles?.mod_role_ids ?? []),
     [settings],
   );
 
@@ -59,15 +54,12 @@ export default function SettingsPage() {
     setSaved(false);
   }
 
-  function togglePanelRole(tier: "admin_role_ids" | "mod_role_ids", roleId: string) {
+  function toggleAdminRole(roleId: string) {
     if (!settings) return;
-    const current = new Set(settings.roles?.[tier] ?? []);
+    const current = new Set(settings.roles?.admin_role_ids ?? []);
     if (current.has(roleId)) current.delete(roleId);
     else current.add(roleId);
-    update("roles", {
-      admin_role_ids: tier === "admin_role_ids" ? Array.from(current) : (settings.roles?.admin_role_ids ?? []),
-      mod_role_ids: tier === "mod_role_ids" ? Array.from(current) : (settings.roles?.mod_role_ids ?? []),
-    });
+    update("roles", { admin_role_ids: Array.from(current) });
   }
 
   function toggleBot(key: string) {
@@ -93,7 +85,6 @@ export default function SettingsPage() {
         custom_message: settings.custom_message ?? "",
         roles: {
           admin_role_ids: settings.roles?.admin_role_ids ?? [],
-          mod_role_ids: settings.roles?.mod_role_ids ?? [],
         },
       });
       setSettings(updated);
@@ -218,9 +209,8 @@ export default function SettingsPage() {
               Panel access roles
             </h2>
             <p className="muted" style={{ marginTop: 0 }}>
-              Members with Manage Server can always manage this bot. Grant extra access by role:
-              <strong> Admin</strong> roles can change everything here; <strong>Mod</strong> roles
-              can view settings (read-only).
+              Members with Manage Server can always manage this bot. Roles ticked here get the
+              same full access, on this dashboard and on the in-Discord admin panel.
             </p>
             <div className="field">
               <label>Admin roles</label>
@@ -230,24 +220,7 @@ export default function SettingsPage() {
                     <input
                       type="checkbox"
                       checked={adminRoleIds.has(r.id)}
-                      disabled={readOnly}
-                      onChange={() => togglePanelRole("admin_role_ids", r.id)}
-                    />
-                    <span>{r.name}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-            <div className="field">
-              <label>Mod roles (read-only access)</label>
-              <div className="role-checklist" style={{ maxHeight: 180, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
-                {roles.map((r) => (
-                  <label className="toggle" key={`m-${r.id}`}>
-                    <input
-                      type="checkbox"
-                      checked={modRoleIds.has(r.id)}
-                      disabled={readOnly}
-                      onChange={() => togglePanelRole("mod_role_ids", r.id)}
+                      onChange={() => toggleAdminRole(r.id)}
                     />
                     <span>{r.name}</span>
                   </label>
@@ -269,19 +242,15 @@ export default function SettingsPage() {
                 rows={3}
                 value={settings.custom_message ?? ""}
                 onChange={(e) => update("custom_message", e.target.value)}
-                placeholder="It's time to bump! {bump_role} — {bots}"
+                placeholder="It's time to bump! {bump_role} - {bots}"
               />
             </div>
           </section>
 
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            {readOnly ? (
-              <span className="muted">You have read-only (Mod) access — changes are disabled.</span>
-            ) : (
-              <button className="btn btn-primary" disabled={saving} onClick={() => void save()}>
-                {saving ? "Saving..." : "Save settings"}
-              </button>
-            )}
+            <button className="btn btn-primary" disabled={saving} onClick={() => void save()}>
+              {saving ? "Saving..." : "Save settings"}
+            </button>
           </div>
         </div>
       )}

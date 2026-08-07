@@ -13,17 +13,18 @@ ONE = 60 * 60      # 1 hour
 TWO = 2 * 60 * 60  # 2 hours
 
 def _default_roles() -> Dict[str, Any]:
-    """Canonical panel-role config, shared across the ecosystem dashboards."""
-    return {"admin_role_ids": [], "mod_role_ids": []}
+    """Canonical panel-role config. Admin-only: there is no Mod tier."""
+    return {"admin_role_ids": []}
 
 
 def _normalize_roles(raw: Any) -> Dict[str, Any]:
-    """Coerce a stored ``roles`` value into the canonical two-list shape."""
+    """Coerce a stored ``roles`` value into the canonical shape.
+
+    Any other stored key (e.g. a pre-2026-08-06 ``mod_role_ids``) is dropped on
+    read - the Mod tier is gone and nothing grants access from it.
+    """
     raw = raw if isinstance(raw, dict) else {}
-    return {
-        "admin_role_ids": list(raw.get("admin_role_ids") or []),
-        "mod_role_ids": list(raw.get("mod_role_ids") or []),
-    }
+    return {"admin_role_ids": list(raw.get("admin_role_ids") or [])}
 
 
 def _default_premium() -> Dict[str, Any]:
@@ -76,8 +77,8 @@ class GuildConfig:
     timers_channel: int = 0
     timers_message: bool = True
     custom_message: str = ""
-    # Canonical panel-role config (roles.admin_role_ids / roles.mod_role_ids),
-    # consumed by the dashboard to gate the Settings page.
+    # Canonical panel-role config (roles.admin_role_ids), consumed by the
+    # dashboard and the admin panel to gate access.
     roles: Dict[str, Any] = field(default_factory=_default_roles)
     premium: Dict[str, Any] = field(default_factory=_default_premium)
     bot_delay: Dict[str, Any] = field(default_factory=_default_bot_delay)

@@ -21,7 +21,7 @@ Four engine masters in `EmpireSystems/` are vendored into this repo. Files carry
 
 Drift is gated with each tool's `--check --bot reminder`; all four report a real green (no `[PENDING-MIGRATION]`).
 
-"Not set up yet" messages come from the engine `admin/setup_notice.py` - never hand-write one. Besides the panel breadcrumb it names WHO can open the panel, which on a fresh guild is only the owner and Manage Server holders. This bot labels that panel category **Panel Access** rather than the engine's default "Role Configuration", so `admin/settings/bindings.py` sets `ROLE_ACCESS_PATH` to override the breadcrumb. Both consumers (the bump handler's unconfigured-bump nudge and the `check_or_notify` gate) go through it; the gate imports it lazily because `admin/__init__` pulls the panel engine, which reads back into storage.
+"Not set up yet" messages come from the engine `admin/setup_notice.py` - never hand-write one. Besides the panel breadcrumb it names WHO can open the panel, which on a fresh guild is only the owner and Manage Server holders. This bot's node is a top-level leaf named **Panel Access Roles** rather than the engine's default "Role Configuration" menu, so `admin/settings/bindings.py` sets `ROLE_ACCESS_PATH` to override the breadcrumb. Both consumers (the bump handler's unconfigured-bump nudge and the `check_or_notify` gate) go through it; the gate imports it lazily because `admin/__init__` pulls the panel engine, which reads back into storage.
 
 ## Running the Bot
 
@@ -98,14 +98,16 @@ Entitlement-backed premium on the shared engine (`PremiumManager`: `entitlements
 
 ### Admin Panel (`admin/`)
 
-Vendored admin_engine at the bot root; seam in `admin/settings/`. `MAIN_PANEL` tree: Core Setup (bump channel/role, timers channel), Bump Bots (enabled bots, per-bot cooldowns with premium tiers), Messages (custom message, timer embed), Panel Access (engine `panel_roles_pair` writing `roles.admin_role_ids`/`mod_role_ids` - the same lists the dashboard reads), Premium (live status via `info_action`). Tier resolution: engine `resolve_panel_role_from_config` (Manage Server OR configured roles).
+Vendored admin_engine at the bot root; seam in `admin/settings/`. `MAIN_PANEL` tree: Core Setup (bump channel/role, timers channel) and Panel Access Roles (a top-level LEAF per ADMIN_PANEL_STANDARD 1.1 - engine `panel_roles_pair(include_mod=False, str_ids=True)` writing `roles.admin_role_ids`, the same list the dashboard reads, gated by the builder's default `manage_guild_pre_check`) in the `main` group, then Bump Bots (enabled bots, per-bot cooldowns with premium tiers), Messages (custom message, timer embed), Premium (live status via `info_action`) in the `feature` group.
+
+The panel is **ADMIN-ONLY**: `bindings.resolve_panel_role` delegates to the engine `resolve_panel_role_from_config` (Manage Server OR `roles.admin_role_ids`) and collapses anything else to "none". There is no Mod tier, no `roles.mod_role_ids` key, and no `PanelNode.mod_allowed` flags in the seam. (The vendored engine still carries mod machinery for the bots that have not converted - leave it alone.)
 
 ### Dashboard (`dashboard/`)
 
 FastAPI backend + React 19/TS/Vite SPA, on the shared dashboard_engine (`_engine/` backend: csrf/oauth/session/signing/panel_access/rate_limit/discord_cache; `frontend/src/_engine/`: EcosystemNav, formatError, eos-tokens, shared components). Shared GateKeeper SSO (identical `GATEKEEPER_*`, `DASHBOARD_SECRET_KEY`, `eos_session` cookie across all dashboards; `SHARED_SESSIONS_URI` -> `WebSessions.SharedSessions`).
 
 - Seam config keys in `config.py`: `RATE_LIMITS`, `OAUTH_REDIRECT_ALLOWLIST`, `OAUTH_DEFAULT_REDIRECT`, `ADMINISTRATOR_PERMISSION`, env-driven `TRUSTED_PROXY_IPS` (set behind a reverse proxy or proxied visitors share one rate bucket).
-- `auth/panel_role.py` is a thin 3-tier policy (admin/mod/none) over `_engine/auth/panel_access.py`: MANAGE_GUILD verified LIVE on access-gated routes; guild-list probes use `verify_manage_live=False`. Mod tier is read-only.
+- `auth/panel_role.py` is a thin 2-tier policy (admin/none) over `_engine/auth/panel_access.py`: MANAGE_GUILD verified LIVE on access-gated routes; guild-list probes use `verify_manage_live=False`. There is no Mod tier - `roles.admin_role_ids` is the only configured grant, and every dashboard route is admin-only.
 - Settings PUT: whitelisted surgical dotted `$set` only (never a full-document write - the bot writes timestamps concurrently) and validates channel/role ids belong to the guild.
 - Discord API reads (bot guilds, bot id, channels, roles) go through the engine `_engine/discord_cache.py` (TTL + single-flight + bounded).
 - `routers/user_data.py` + `services/user_data.py` back the `/me/privacy` page, mirroring TheHost's `/api/user/*` surface (`/user/guilds?with_data=`, `/user/data/export`, `DELETE /user/data`). ImperialReminder has no per-member tracking, so the only account-linked records are `audit_log` entries naming the actor and `entitlements` the user granted or received. Erasure REDACTS the actor identity on audit entries (never drops them - a self-service wipe of the trail would gut the audit log); entitlements are left intact. Both id fields are written as int (admin seam) and str (premium cog), so every filter matches both spellings.
@@ -126,7 +128,7 @@ Configured in `storage/sub_systems/bump_config.py`:
 
 - **Add a cog**: drop a file with `async def setup(bot)` into `commands/`, `admin/`, or `Features/`. Managers come from `bot.<name>` - never re-instantiate.
 - **Add a bump bot**: extend `BUMP_BOTS_INFO`, `BUMP_BOTS`, `DEFAULT_GUILD_CONFIG` delays/timestamps, `SUCCESS_KEYWORDS`, `BUMP_BOTS_CHOICES` in `sub_systems/bump_config.py`.
-- **Schema changes**: additive `GuildConfig` fields need no migration (`from_dict` fills defaults). Guild config + bump timestamps are LIVE production data - migrate, never drop.
+- **Schema changes**: additive `GuildConfig` fields need no migration (`from_dict` fills defaults). Guild config + bump timestamps are LIVE production data - migrate, never drop. Removing a field ships an idempotent script under `migrations/scripts/` (`_common.py` is the harness: dry run by default, `--apply` to write a backup then `$unset`, `--rollback <file>` to replay it). Run the dry run, read its report, then apply.
 - **Engine changes**: edit the master in `EmpireSystems/`, re-run the sync tool with `--bot reminder`, verify `--check`.
 - **Debugging detection**: watch `[on_message]` / `[on_message_edit]` / `[extract_all_text]` log lines.
 

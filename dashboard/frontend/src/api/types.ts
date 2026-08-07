@@ -6,11 +6,10 @@ export interface User {
   discriminator?: string | null;
   can_manage_any?: boolean;
   can_access_admin_any?: boolean;
-  can_access_mod_any?: boolean;
   can_access_settings_any?: boolean;
 }
 
-export type PanelRole = "admin" | "mod" | "none";
+export type PanelRole = "admin" | "none";
 
 export interface Guild {
   id: string;
@@ -42,10 +41,9 @@ export interface BumpBot {
 }
 
 /** Per-guild bump configuration (mirrors the dashboard settings API).
- * Snowflake IDs are strings ('' = unset) — they exceed JS's safe-integer range. */
+ * Snowflake IDs are strings ('' = unset) - they exceed JS's safe-integer range. */
 export interface PanelRolesConfig {
   admin_role_ids: string[];
-  mod_role_ids: string[];
 }
 
 export interface GuildSettings {
@@ -58,7 +56,6 @@ export interface GuildSettings {
   custom_message: string;
   roles?: PanelRolesConfig;
   panel_role?: PanelRole;
-  mod_allowed_sections?: string[];
   [key: string]: unknown;
 }
 
@@ -104,7 +101,7 @@ export interface GuildBumpStats {
   premium: boolean;
   config_complete: boolean;
   enabled_count: number;
-  /** Server's current unix time — anchor client countdowns to avoid clock skew. */
+  /** Server's current unix time - anchor client countdowns to avoid clock skew. */
   server_time: number;
   bots: BumpBotStatus[];
 }

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from dashboard.auth.dependencies import get_current_user
-from dashboard.auth.panel_role import resolve_panel_role, require_panel_access, MOD_ALLOWED_SECTIONS
+from dashboard.auth.panel_role import resolve_panel_role, require_panel_access
 from dashboard._engine.auth.csrf import verify_csrf
 from storage.settings.collections import db_manager
 from storage.config_manager import get_guild_config_manager, GuildConfig
@@ -43,9 +43,7 @@ async def _validate_guild_ids(guild_id: int, updates: dict) -> None:
                     )
 
     role_cfg = updates.get("roles") or {}
-    wants_roles = bool(updates.get("bump_role")) or bool(
-        role_cfg.get("admin_role_ids") or role_cfg.get("mod_role_ids")
-    )
+    wants_roles = bool(updates.get("bump_role")) or bool(role_cfg.get("admin_role_ids"))
     if wants_roles:
         roles = await guild_roles(str(guild_id))
         valid_roles = {str(r["id"]) for r in roles}
@@ -54,12 +52,11 @@ async def _validate_guild_ids(guild_id: int, updates: dict) -> None:
                 raise HTTPException(
                     status_code=422, detail="bump_role is not a role in this guild"
                 )
-            for list_key in ("admin_role_ids", "mod_role_ids"):
-                if any(str(r) not in valid_roles for r in role_cfg.get(list_key, [])):
-                    raise HTTPException(
-                        status_code=422,
-                        detail=f"roles.{list_key} contains a role not in this guild",
-                    )
+            if any(str(r) not in valid_roles for r in role_cfg.get("admin_role_ids", [])):
+                raise HTTPException(
+                    status_code=422,
+                    detail="roles.admin_role_ids contains a role not in this guild",
+                )
 
 
 def _coerce_id(value) -> int:
@@ -82,10 +79,8 @@ def _serialize(config: GuildConfig, panel_role: str) -> dict:
     roles = data.get("roles") or {}
     data["roles"] = {
         "admin_role_ids": [str(r) for r in (roles.get("admin_role_ids") or [])],
-        "mod_role_ids": [str(r) for r in (roles.get("mod_role_ids") or [])],
     }
     data["panel_role"] = panel_role
-    data["mod_allowed_sections"] = sorted(MOD_ALLOWED_SECTIONS)
     return data
 
 
@@ -105,9 +100,10 @@ async def update_settings(
     _csrf: None = Depends(verify_csrf),
 ):
     role = await resolve_panel_role(session, str(guild_id))
-    # Mod tier is read-only (MOD_ALLOWED_SECTIONS is empty); only admins write.
+    # Admin-only surface: require_panel_access already rejects "none", so this is
+    # defense in depth against a future tier ever being added.
     if role != "admin":
-        raise HTTPException(status_code=403, detail="Mod role cannot change settings")
+        raise HTTPException(status_code=403, detail="Admin access required")
 
     gcm = await get_guild_config_manager(db_manager)
 
@@ -132,7 +128,6 @@ async def update_settings(
             value = value if isinstance(value, dict) else {}
             updates[key] = {
                 "admin_role_ids": [str(r) for r in (value.get("admin_role_ids") or [])],
-                "mod_role_ids": [str(r) for r in (value.get("mod_role_ids") or [])],
             }
 
     if updates:

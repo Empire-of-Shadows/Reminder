@@ -1,17 +1,18 @@
-"""Panel-role policy for the ImperialReminder dashboard (3-tier: admin / mod / none).
+"""Panel-role policy for the ImperialReminder dashboard (2-tier: admin / none).
 
 The live guild-permission plumbing (bot-token MANAGE_GUILD check, member-role fetch,
 rate limiter, caches) lives in the shared engine at
 ``dashboard/_engine/auth/panel_access.py``. This file is only reminder's tier policy:
-admin/mod role lists live on the guild config document (``ImperialReminder.GuildData``,
-``_id`` = str(guild_id)) at the canonical ``roles.admin_role_ids`` /
-``roles.mod_role_ids`` paths - the SAME lists the in-Discord ``/admin panel``'s
-Panel Access menu edits.
+the admin role list lives on the guild config document (``ImperialReminder.GuildData``,
+``_id`` = str(guild_id)) at the canonical ``roles.admin_role_ids`` path - the SAME list
+the in-Discord ``/admin panel``'s Panel Access Roles leaf edits.
+
+This dashboard is admin-only: there is no Mod tier on the bot side, so this seam never
+resolves one either.
 
 Tiers:
   - "admin": MANAGE_GUILD (verified live via the bot token) OR overlap with
     roles.admin_role_ids
-  - "mod":   overlap with roles.mod_role_ids (read-only on this dashboard)
   - "none":  no panel access
 """
 
@@ -31,29 +32,23 @@ from storage.log import get_logger
 
 logger = get_logger("dashboard.auth.panel_role")
 
-# Sections a mod tier may PUT. Empty -> mods are read-only (view settings, no
-# changes). Admin tier edits everything.
-MOD_ALLOWED_SECTIONS: frozenset[str] = frozenset()
-
 
 def _guild_data_collection():
     # Engine CollectionManager for ImperialReminder.GuildData; no raw access.
     return db_manager.get_collection_manager("settings_guild_data")
 
 
-async def _guild_role_lists(guild_id: str) -> tuple[frozenset[str], frozenset[str]]:
-    """Return (admin_role_ids, mod_role_ids) configured for the guild."""
+async def _guild_admin_roles(guild_id: str) -> frozenset[str]:
+    """Return the admin_role_ids configured for the guild."""
     try:
         doc = await _guild_data_collection().find_one(
             {"_id": str(guild_id)}, projection={"roles": 1}
         )
     except Exception:
         logger.warning(f"panel-role config lookup failed for {guild_id}", exc_info=True)
-        return (frozenset(), frozenset())
+        return frozenset()
     roles = (doc or {}).get("roles") or {}
-    admin_ids = frozenset(str(r) for r in (roles.get("admin_role_ids") or []))
-    mod_ids = frozenset(str(r) for r in (roles.get("mod_role_ids") or []))
-    return (admin_ids, mod_ids)
+    return frozenset(str(r) for r in (roles.get("admin_role_ids") or []))
 
 
 async def resolve_panel_role(
@@ -72,8 +67,8 @@ async def resolve_panel_role(
     elif session_has_manage_guild(session, guild_id):
         return "admin"
 
-    admin_ids, mod_ids = await _guild_role_lists(guild_id)
-    if not admin_ids and not mod_ids:
+    admin_ids = await _guild_admin_roles(guild_id)
+    if not admin_ids:
         return "none"
 
     user_id = session.get("user_id") or session.get("user_data", {}).get("id")
@@ -86,8 +81,6 @@ async def resolve_panel_role(
 
     if member_roles & admin_ids:
         return "admin"
-    if member_roles & mod_ids:
-        return "mod"
     return "none"
 
 
@@ -95,7 +88,7 @@ async def require_panel_access(
     guild_id: str,
     session: dict = Depends(get_current_user),
 ) -> dict:
-    """FastAPI dependency: 403 unless the user resolves to admin/mod for the
+    """FastAPI dependency: 403 unless the user resolves to admin for the
     guild. Returns the session."""
     role = await resolve_panel_role(session, str(guild_id))
     if role == "none":

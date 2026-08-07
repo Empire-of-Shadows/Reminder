@@ -20,8 +20,8 @@ export default function SettingsHubPage() {
     api.botInviteUrl().then((r) => setInviteUrl(r.url)).catch(() => {});
   }, []);
 
-  // Client guard: admins and mods reach Settings; pure-none users have no
-  // Settings nav link. Server-side routes re-check access on their own.
+  // Client guard: only admins reach Settings; everyone else has no Settings nav
+  // link. Server-side routes re-check access on their own.
   useEffect(() => {
     if (user && !user.can_access_settings_any) navigate("/dashboard", { replace: true });
   }, [user, navigate]);
@@ -33,7 +33,6 @@ export default function SettingsHubPage() {
   const counts = useMemo(() => ({
     total: webGuilds.length,
     admin: webGuilds.filter((g) => g.panel_role === "admin").length,
-    mod: webGuilds.filter((g) => g.panel_role === "mod").length,
   }), [webGuilds]);
   const selected = webGuilds.find((g) => g.id === selectedId) ?? null;
 
@@ -60,10 +59,6 @@ export default function SettingsHubPage() {
             <div className="empire-stat__value">{counts.admin}</div>
             <div className="empire-stat__label">Admin</div>
           </div>
-          <div className="empire-stat">
-            <div className="empire-stat__value">{counts.mod}</div>
-            <div className="empire-stat__label">Mod</div>
-          </div>
         </div>
       </section>
 
@@ -76,7 +71,7 @@ export default function SettingsHubPage() {
           <div className="card">
             <h3>No manageable servers</h3>
             <p className="muted">
-              You need Manage Server permission (or a configured admin/mod role) in a Discord
+              You need Manage Server permission (or a configured admin role) in a Discord
               server to manage Imperial Reminder.
               {inviteUrl && (
                 <>
@@ -123,7 +118,6 @@ function SettingsActionPanel({
   const iconUrl = guild.icon
     ? `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.png?size=64`
     : null;
-  const isAdmin = guild.panel_role === "admin";
 
   return (
     <aside className="card guild-web__panel">
@@ -138,11 +132,7 @@ function SettingsActionPanel({
           >
             {guild.name}
           </div>
-          <span
-            className={`status-badge ${isAdmin ? "status-badge--approved" : "status-badge--pending"}`}
-          >
-            {isAdmin ? "Admin" : "Mod"}
-          </span>
+          <span className="status-badge status-badge--approved">Admin</span>
         </div>
       </div>
 
@@ -160,7 +150,7 @@ function SettingsActionPanel({
           )
         ) : (
           <button className="btn btn-primary" onClick={() => onNavigate(`/settings/${guild.id}`)}>
-            {isAdmin ? "Settings" : "View settings"}
+            Settings
           </button>
         )}
       </div>
@@ -173,11 +163,6 @@ function SettingsActionPanel({
       {guild.bot_in_guild && !guild.has_config && (
         <p className="guild-invite-hint" style={{ marginTop: 0 }}>
           Not set up yet - open settings to pick a bump channel and reminder role.
-        </p>
-      )}
-      {guild.bot_in_guild && !isAdmin && (
-        <p className="guild-invite-hint" style={{ marginTop: 0 }}>
-          Moderator access is read-only.
         </p>
       )}
     </aside>

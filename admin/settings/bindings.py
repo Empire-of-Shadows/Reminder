@@ -26,7 +26,6 @@ from storage.log import get_logger
 
 # Re-export the static branding text the engine reads by name.
 from .panel_branding import OVERVIEW_FOOTER, SETUP_GUIDE_TEXT
-from . import role_auth
 
 logger = get_logger("AdminBindings")
 
@@ -35,13 +34,15 @@ logger = get_logger("AdminBindings")
 
 BOT_NAME = "Imperial Reminder"
 
-# ImperialReminder gates the panel on Manage Server only (no mod tier) - kept empty.
-MOD_ALLOWED_CATEGORIES: set[str] = set(role_auth.MOD_ALLOWED_CATEGORIES)
-
 # Breadcrumb the engine's setup notices use when telling an owner where to delegate
-# panel access. This bot labels that category "Panel Access"; the engine default
-# ("Role Configuration") matches the other bots' trees, so it is overridden here.
-ROLE_ACCESS_PATH = "Panel Access -> Panel Access Roles"
+# panel access. This bot's node sits at the panel's top level (no wrapping "Panel
+# Access" menu), so the engine default ("Role Configuration") would point at a node
+# that does not exist.
+ROLE_ACCESS_PATH = "Panel Access Roles"
+
+# The panel is admin-only: there is no Mod tier. resolve_panel_role below collapses
+# anything that is not "admin" to "none", so neither per-node `PanelNode.mod_allowed`
+# flags nor the legacy `MOD_ALLOWED_CATEGORIES` fallback are used by this bot.
 
 # OVERVIEW_FOOTER / SETUP_GUIDE_TEXT are re-exported from panel_branding above.
 
@@ -75,10 +76,16 @@ async def _cm(collection: str):
 # ── Tier resolution ──────────────────────────────────────────────────────────────
 
 async def resolve_panel_role(user: discord.Member, guild_id: int) -> str:
-    """Return the caller's tier. ImperialReminder uses the shared resolver over the canonical
-    ``roles.*`` lists (empty by default ⇒ Manage Server is the only path to ``admin``)."""
+    """Return "admin" | "none" - the ImperialReminder panel has no Mod tier.
+
+    Delegates to the engine's generic resolver (``auth.resolve_panel_role_from_config``)
+    for the Manage Server + ``roles.admin_role_ids`` checks, then collapses any non-admin
+    outcome to "none". A stale ``roles.mod_role_ids`` value in an old document therefore
+    grants nothing. With no admin roles configured, Manage Server is the only path in.
+    """
     from ..auth import resolve_panel_role_from_config
-    return await resolve_panel_role_from_config(user, guild_id)
+    role = await resolve_panel_role_from_config(user, guild_id)
+    return role if role == "admin" else "none"
 
 
 # ── Dashboard flags (setup-guide toggle, etc.) ───────────────────────────────────

@@ -9,6 +9,14 @@ Accessor contract (per PanelNode):
     get_values:   async (guild_id) -> list
     set_values:   async (guild_id, values) -> bool
     clear_values: async (guild_id) -> bool
+
+Top-level shape follows ADMIN_PANEL_STANDARD.md 1.1 (menu when an entry groups two
+or more settings, leaf when it is a single setting): Core Setup and Panel Access
+Roles form the "main" cluster, with Bump Bots / Messages / Premium below the
+"Feature Configurations" divider.
+
+The panel is admin-only: ``bindings.resolve_panel_role`` never returns "mod", so no
+node here declares ``mod_allowed``.
 """
 
 import discord
@@ -193,7 +201,7 @@ SETUP_CONFIG = PanelNode(
             key="bump_channel",
             label="Bump Channel",
             kind="channel_select",
-            description="Channel your bump bots post in — reminders are sent here.",
+            description="Channel your bump bots post in - reminders are sent here.",
             get_values=lambda gid: _get_channel(gid, "bump_channel"),
             set_values=lambda gid, vals: _set_channel(gid, vals, "bump_channel"),
             clear_values=lambda gid: _clear_channel(gid, "bump_channel"),
@@ -365,28 +373,24 @@ PREMIUM_CONFIG = PanelNode(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Panel Access (engine panel_roles_pair over the canonical roles.* lists)
+# Panel Access Roles (engine panel_roles_pair over roles.admin_role_ids)
 # ─────────────────────────────────────────────────────────────────────────────
 
-# str_ids=True: the dashboard already stores roles.admin_role_ids /
-# roles.mod_role_ids as string snowflakes; keep one storage convention.
-# Changing panel access requires Manage Server (engine manage_guild_pre_check).
-_PANEL_ROLE_NODES = panel_roles_pair(str_ids=True)
-
-ACCESS_CONFIG = PanelNode(
-    key="panel_access",
-    label="Panel Access",
-    kind="menu",
-    category_group="feature",
-    description=(
-        "Grant panel and dashboard access by role. Members with **Manage Server** "
-        "always have admin access; Mod roles get read-only dashboard access."
+# One setting, so it is a top-level LEAF, not a single-child wrapper menu
+# (ADMIN_PANEL_STANDARD.md 1.1). The panel and the dashboard are admin-only, there
+# is no Mod tier. str_ids=True: the dashboard already stores
+# roles.admin_role_ids as string snowflakes; keep one storage convention.
+# Changing panel access requires Manage Server (the builder's default pre_check is
+# the engine manage_guild_pre_check), so a delegated admin cannot widen access.
+ACCESS_ROLES_CONFIG = panel_roles_pair(
+    admin_key="panel_access_roles",
+    admin_description=(
+        "Roles that may open `/admin panel` and the web dashboard without Manage "
+        "Server. Members with **Manage Server** always have access."
     ),
-    children={
-        "admin_roles": _PANEL_ROLE_NODES["admin_roles"],
-        "mod_roles": _PANEL_ROLE_NODES["mod_roles"],
-    },
-)
+    str_ids=True,
+)["panel_access_roles"]
+ACCESS_ROLES_CONFIG.category_group = "main"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -400,14 +404,17 @@ MAIN_PANEL = PanelNode(
     description=PANEL_DESCRIPTION,
     locked_children=_main_locked_children,
     lock_reason=(
-        "Finish **Core Setup** first — set a **Bump Channel** and **Bump Role**, "
+        "Finish **Core Setup** first - set a **Bump Channel** and **Bump Role**, "
         "then this section unlocks."
     ),
     children={
+        # ── Main Configurations ───────────────────────────────────────
         "setup": SETUP_CONFIG,
+        "panel_access_roles": ACCESS_ROLES_CONFIG,
+
+        # ── Feature Configurations ────────────────────────────────────
         "bots": BOTS_CONFIG,
         "messages": MESSAGES_CONFIG,
-        "panel_access": ACCESS_CONFIG,
         "premium": PREMIUM_CONFIG,
     },
 )

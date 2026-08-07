@@ -1,8 +1,9 @@
-"""Dashboard API routes — user info, guild listing, channels/roles, public stats.
+"""Dashboard API routes - user info, guild listing, channels/roles, public stats.
 
-Adapted to ImperialReminder: access is governed solely by the Discord
-MANAGE_GUILD permission (no admin/mod panel-role concept). Discord API results
-are cached with short TTLs and single-flight locks to avoid 429s.
+Adapted to ImperialReminder: access is admin-only, granted by the Discord
+MANAGE_GUILD permission or a configured panel-access role (there is no Mod
+tier). Discord API results are cached with short TTLs and single-flight locks
+to avoid 429s.
 """
 
 import asyncio
@@ -43,7 +44,7 @@ async def me(session: dict = Depends(get_current_user)):
 
     Mirrors the sibling dashboards: probe configured panel roles across
     bot-present session guilds. admin = MANAGE_GUILD anywhere OR an admin role
-    anywhere; mod = a mod role anywhere.
+    anywhere. There is no Mod tier, so Settings access IS admin access.
     """
     user = session["user_data"]
     can_manage_any = any(_has_manage(g) for g in session.get("guilds", []))
@@ -60,7 +61,6 @@ async def me(session: dict = Depends(get_current_user)):
     )
     roles = [r for r in results if isinstance(r, str)]
     can_access_admin_any = can_manage_any or any(r == "admin" for r in roles)
-    can_access_mod_any = any(r == "mod" for r in roles)
 
     return {
         "id": user["id"],
@@ -70,8 +70,8 @@ async def me(session: dict = Depends(get_current_user)):
         "discriminator": user.get("discriminator"),
         "can_manage_any": can_manage_any,
         "can_access_admin_any": can_access_admin_any,
-        "can_access_mod_any": can_access_mod_any,
-        "can_access_settings_any": can_access_admin_any or can_access_mod_any,
+        # The panel is admin-only, so Settings access IS admin access.
+        "can_access_settings_any": can_access_admin_any,
     }
 
 
@@ -100,8 +100,8 @@ async def _guild_ids_with_config(guild_ids: list[str]) -> set[str]:
 async def guilds(session: dict = Depends(get_current_user)):
     """Return guilds the user can manage, with bot status and panel-role tier.
 
-    Shows a guild if the user holds MANAGE_GUILD (admin — even when the bot is
-    absent, so they can invite it) OR holds a configured admin/mod role in a
+    Shows a guild if the user holds MANAGE_GUILD (admin - even when the bot is
+    absent, so they can invite it) OR holds a configured panel-access role in a
     guild the bot is in.
     """
     session_guilds = session.get("guilds", [])

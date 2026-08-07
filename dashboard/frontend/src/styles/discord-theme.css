@@ -2625,9 +2625,7 @@ a:focus-visible {
 .guild-web__node-bg { fill: var(--bg-2); }
 .guild-web__node-ring { stroke-width: 2.5; }
 .guild-web__node--admin .guild-web__node-ring { stroke: var(--brand-light); }
-.guild-web__node--mod .guild-web__node-ring { stroke: var(--warning); }
 .guild-web__node--admin { filter: drop-shadow(0 0 6px rgba(122, 61, 240, 0.35)); }
-.guild-web__node--mod { filter: drop-shadow(0 0 6px rgba(255, 184, 107, 0.30)); }
 .guild-web__node.is-setup .guild-web__node-ring { stroke-dasharray: 4 4; }
 .guild-web__node.is-setup { opacity: 0.8; }
 .guild-web__node.is-dim { opacity: 0.32; }
