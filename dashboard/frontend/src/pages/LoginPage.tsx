@@ -27,7 +27,7 @@ export default function LoginPage() {
         <h1>Imperial Reminder</h1>
         <p className="tagline">
           Sign in with Discord to manage your server's bump reminders. Your Empire of Shadows
-          session is shared — one login covers every bot dashboard.
+          session is shared - one login covers every bot dashboard.
         </p>
         <a href="/auth/discord" className="cta">
           Login with Discord
@@ -43,6 +43,17 @@ export default function LoginPage() {
           </a>
           , which covers every bot, dashboard, and tool in the ecosystem. Imperial Reminder has its
           own <Link to="/privacy">privacy page</Link> for the detail specific to this bot.
+        </p>
+        <p className="muted" style={{ fontSize: "0.85rem" }}>
+          New here?{" "}
+          <a
+            href="https://eosofficial.club/about"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Read what this project is about
+          </a>{" "}
+          - six bots, one ecosystem, and why it is built that way.
         </p>
 
         <div className="login-divider">Explore the ecosystem</div>

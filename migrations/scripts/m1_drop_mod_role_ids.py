@@ -24,6 +24,10 @@ Panel Access Roles (or left out deliberately). --apply writes a JSON backup unde
 
 Run it AFTER the admin-only code is deployed. Nothing writes ``mod_role_ids`` any more,
 so there is no race - the field can only sit there until this removes it.
+
+APPLIED against production 2026-08-06 (bot down): matched=1 modified=1, verify 0
+remaining. The one carrying doc held an empty list - no server had delegated the tier.
+Re-running is a no-op.
 """
 
 from __future__ import annotations
