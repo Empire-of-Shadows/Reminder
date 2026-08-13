@@ -8,6 +8,7 @@ import type {
   SettingsPatch,
   GuildSettings,
   GuildBumpStats,
+  GuildOverview,
   ScopeGuild,
   DeleteUserDataResponse,
 } from "./types";
@@ -44,6 +45,12 @@ export const api = {
       body: JSON.stringify(patch),
     }),
 
+  // Everything the dashboard home renders for one server, in one round trip.
+  guildOverview: (guildId: string) =>
+    apiFetch<GuildOverview>(`/api/guilds/${guildId}/overview`),
+
+  // The bump half of the overview on its own. Kept as a public endpoint - the
+  // home page now reads it through /overview, so nothing in the SPA calls this.
   guildBumpStats: (guildId: string) =>
     apiFetch<GuildBumpStats>(`/api/guilds/${guildId}/bump-stats`),
 

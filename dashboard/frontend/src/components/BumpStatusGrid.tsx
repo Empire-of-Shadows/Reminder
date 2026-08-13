@@ -1,23 +1,8 @@
 import { useEffect, useState } from "react";
 import type { BumpBotStatus, GuildBumpStats } from "../api/types";
-
-/** Format a duration in seconds as a compact human string (e.g. "1h 30m"). */
-function formatDuration(seconds: number): string {
-  const s = Math.max(0, Math.floor(seconds));
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = s % 60;
-  if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`;
-  if (m > 0) return sec > 0 ? `${m}m ${sec}s` : `${m}m`;
-  return `${sec}s`;
-}
-
-/** "3h ago" / "just now" relative to the supplied current unix time. */
-function formatRelative(unixSec: number, now: number): string {
-  const diff = now - unixSec;
-  if (diff < 60) return "just now";
-  return `${formatDuration(diff)} ago`;
-}
+// Same two helpers this file has always used; they moved to the shared
+// overview formatter so the home-page tiles report timings identically.
+import { formatDuration, formatRelative } from "./overview/format";
 
 function BotCard({ bot, now }: { bot: BumpBotStatus; now: number }) {
   const ready = bot.status === "ready" || bot.next_due === null || now >= (bot.next_due ?? 0);

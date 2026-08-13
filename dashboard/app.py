@@ -20,6 +20,7 @@ from dashboard.config import CORS_ORIGINS, IS_PRODUCTION
 from dashboard._engine.rate_limit import rate_limit_middleware
 from dashboard._engine.auth.oauth import router as auth_router
 from dashboard.routers.dashboard import router as dashboard_router
+from dashboard.routers.overview import router as overview_router
 from dashboard.routers.settings import router as settings_router
 from dashboard.routers.user_data import router as user_data_router
 from storage.log import get_logger
@@ -103,6 +104,7 @@ app.middleware("http")(activity_middleware)
 app.add_api_route("/auth/csrf", csrf_endpoint, methods=["GET"])
 app.include_router(auth_router, prefix="/auth")
 app.include_router(dashboard_router, prefix="/api")
+app.include_router(overview_router, prefix="/api")
 app.include_router(settings_router, prefix="/api")
 app.include_router(user_data_router, prefix="/api")
 
@@ -135,7 +137,7 @@ if os.path.isdir(_frontend_dist):
     app.mount("/assets", StaticFiles(directory=os.path.join(_frontend_dist, "assets")), name="assets")
 
 
-# SPA fallback — any unmatched GET returns index.html for client-side routing.
+# SPA fallback - any unmatched GET returns index.html for client-side routing.
 # Real files shipped in dist/ or public/ (favicons, brand images, robots.txt)
 # are served directly first so the fallback doesn't swallow them.
 @app.get("/{path:path}")

@@ -1,38 +1,29 @@
-export interface User {
-  id: string;
-  username?: string | null;
-  global_name?: string | null;
-  avatar?: string | null;
-  discriminator?: string | null;
-  can_manage_any?: boolean;
-  can_access_admin_any?: boolean;
-  can_access_settings_any?: boolean;
+import type { Guild as EngineGuild, SessionUser } from "../_engine/api/types";
+
+// Shapes that are the same across the fleet live in the engine. Re-exported here
+// so ImperialReminder's own modules keep importing their types from one place.
+export type {
+  Channel,
+  FeatureState,
+  FeatureStatus,
+  PanelRole,
+  Role,
+} from "../_engine/api/types";
+// Also needed in local scope below - a `export type {...}` re-export does not bind.
+import type { FeatureStatus, PanelRole } from "../_engine/api/types";
+
+/** The signed-in user, plus this dashboard's access flags.
+ *  The panel is admin-only here, so settings access IS admin access. */
+export interface User extends SessionUser {
+  can_manage_any: boolean;
+  can_access_admin_any: boolean;
+  can_access_settings_any: boolean;
 }
 
-export type PanelRole = "admin" | "none";
-
-export interface Guild {
-  id: string;
-  name: string;
-  icon: string | null;
-  bot_in_guild: boolean;
-  has_config: boolean;
-  setup_required: boolean;
-  panel_role?: PanelRole;
-}
-
-export interface Channel {
-  id: string;
-  name: string;
-  type: number;
-  position: number;
-}
-
-export interface Role {
-  id: string;
-  name: string;
-  color: number;
-  position: number;
+// The engine leaves panel_role optional because some dashboards omit it.
+// ImperialReminder's /api/guilds always sends it, so narrow it back to required.
+export interface Guild extends EngineGuild {
+  panel_role: PanelRole;
 }
 
 export interface BumpBot {
@@ -79,6 +70,8 @@ export interface BumpBotStatus {
   cooldown: number;
   next_due: number | null;
   status: "ready" | "waiting";
+  /** The bump timestamp the last delivered reminder covered (overview only). */
+  reminded_for?: number | null;
 }
 
 /** A server shown in the privacy page's data-scope picker. `name` is null when
@@ -104,4 +97,83 @@ export interface GuildBumpStats {
   /** Server's current unix time - anchor client countdowns to avoid clock skew. */
   server_time: number;
   bots: BumpBotStatus[];
+}
+
+// ── Guild overview (GET /api/guilds/{id}/overview) ────────────────────────
+//
+// Every section is independently nullable: the endpoint builds them
+// concurrently and nulls out whichever one failed, so one broken collection
+// cannot blank the page. Render each null as "could not be loaded", never as
+// zero.
+
+/** Live bump state. Extends the /bump-stats shape with the page's roll-ups. */
+export interface BumpsOverview extends GuildBumpStats {
+  ready_count: number;
+  waiting_count: number;
+  never_bumped: number;
+  /** Soonest cooldown expiry across the enabled bots, unix seconds. */
+  next_due: number | null;
+  /** Most recent bump across the enabled bots, unix seconds. */
+  last_bump: number | null;
+  /** Bumps that are off cooldown with no reminder recorded against them. */
+  reminders_pending: number;
+  now: number;
+}
+
+/** What is configured. Snowflakes are strings, '' when unset. */
+export interface SetupOverview {
+  bump_channel: string;
+  bump_role: string;
+  timers_channel: string;
+  timers_message: boolean;
+  custom_message_set: boolean;
+  custom_message_length: number;
+  admin_role_count: number;
+  enabled_bots: string[];
+  supported_bots: BumpBot[];
+  updated_at: string | null;
+  created_at: string | null;
+}
+
+export interface PremiumOverview {
+  is_premium: boolean;
+  tier: string | null;
+  expires_at: string | null;
+  webhook_configured: boolean;
+  /** True only when premium is live AND a custom message is written: the sender
+   *  falls back to the standard text otherwise. */
+  custom_message_active: boolean;
+}
+
+/** One day of the change trend. `date` is YYYY-MM-DD in UTC. */
+export interface ChangePoint {
+  date: string;
+  changes: number;
+}
+
+export interface ChangeEntry {
+  action: string;
+  section: string;
+  key: string;
+  /** Display name of whoever made the change, or null when it was not recorded
+   *  (or was redacted from the audit trail on request). */
+  actor: string | null;
+  at: string | null;
+}
+
+export interface ChangesOverview {
+  total: number;
+  total_30d: number;
+  daily: ChangePoint[];
+  recent: ChangeEntry[];
+}
+
+export interface GuildOverview {
+  guild_id: string;
+  server_time: number;
+  features: FeatureStatus[];
+  bumps: BumpsOverview | null;
+  setup: SetupOverview | null;
+  premium: PremiumOverview | null;
+  changes: ChangesOverview | null;
 }

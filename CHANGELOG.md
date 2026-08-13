@@ -3,6 +3,38 @@
 All notable, community-facing changes to ImperialReminder are recorded here in plain language.
 For the technical, commit-level history, see git.
 
+## [Unreleased] - 2026-08-13
+
+### Fixed
+- On phones, the server panel on the settings hub now shows its close button and its server
+  icon in full instead of cutting them off at the panel's rounded edge, and the close button
+  stays put while you scroll the panel.
+
+### Changed
+- **The dashboard has been rebuilt around one question: is it working?** Opening a server now
+  starts with a row of feature cards - bump watching, reminder pings, the live countdown, your
+  custom message and who can manage the bot - each saying On, Off, or Needs setup with the reason.
+  Underneath it are the bump timers you already had, plus what is set up, your premium status and
+  a record of recent setting changes with a 30-day chart. The old strip of server buttons is now a
+  search-friendly server picker, and the page finally has a sensible maximum width, so on a big
+  monitor the cards no longer stretch across the whole screen.
+- **The dashboard tells you when your custom reminder is not actually being sent.** A custom
+  reminder message needs premium. If your server has written one without premium, the dashboard
+  now says so plainly instead of showing it as configured while the standard reminder goes out.
+- **The settings page is now a list of sections instead of one long form.** Bumping, bump bots,
+  the live countdown, the reminder wording and who can manage each have their own page, with a
+  search box, a badge showing what still needs setting up, and a panel beside the form showing
+  what that setting is doing right now. Saving works exactly as before - one Save button that
+  saves everything on the page - and your unsaved edits survive switching between sections.
+- **Everything reads properly on a phone.** The dashboard, settings and the Web of Servers all
+  collapse to a single column on a narrow screen instead of squeezing content off the side, and
+  the header no longer overlaps itself.
+- **The Web of Servers is now a living web.** The server picker page is a full-screen scene of
+  your servers woven together with silk strands: pick a node and its options grow out of the web
+  towards it. On a phone those options slide up from the bottom of the screen instead. Servers
+  the bot has not been set up in are marked, and servers it has not been added to are dimmed with
+  an invite button.
+
 ## [Unreleased] - 2026-08-07
 
 ### Added
