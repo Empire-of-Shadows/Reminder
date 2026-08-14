@@ -25,7 +25,7 @@ export default function AdminOverview({ overview }: { overview: GuildOverview })
   return (
     <div className="ov-grid">
       <IsItWorking overview={overview} />
-      <BumpTimers guildId={guildId} bumps={overview.bumps} />
+      <BumpTimers guildId={guildId} bumps={overview.bumps} setup={overview.setup} />
       <SetupHealth guildId={guildId} setup={overview.setup} />
       <Premium guildId={guildId} premium={overview.premium} setup={overview.setup} />
       <ChangeActivity guildId={guildId} changes={overview.changes} />
@@ -64,7 +64,15 @@ function IsItWorking({ overview }: { overview: GuildOverview }) {
 
 /* ── Bump timers ───────────────────────────────────────────────────── */
 
-function BumpTimers({ guildId, bumps }: { guildId: string; bumps: BumpsOverview | null }) {
+function BumpTimers({
+  guildId,
+  bumps,
+  setup,
+}: {
+  guildId: string;
+  bumps: BumpsOverview | null;
+  setup: SetupOverview | null;
+}) {
   if (!bumps) {
     return (
       <Tile span={12} title="Bump timers">
@@ -122,7 +130,7 @@ function BumpTimers({ guildId, bumps }: { guildId: string; bumps: BumpsOverview 
         </Link>
       }
     >
-      <BumpStatusGrid stats={bumps} />
+      <BumpStatusGrid stats={bumps} createdAt={setup?.created_at ?? null} />
       {bumps.never_bumped > 0 && (
         <p className="ov-muted">
           {bumps.never_bumped} of them {bumps.never_bumped === 1 ? "has" : "have"} never been seen
@@ -237,7 +245,12 @@ function Premium({
           k="Custom message"
           v={premium.custom_message_active ? "In use" : wroteMessage ? "Written" : "Not written"}
         />
-        <KeyValue k="Webhook delivery" v={premium.webhook_configured ? "Set" : "Not set"} />
+        {/* Nothing in the bot or the dashboard writes premium.guild_webhook, so
+            an unset value means "never offered", not "you have not set it up
+            yet". Showing "Not set" would invite an admin to go looking for a
+            switch that does not exist, so the row only appears when a value is
+            actually stored. */}
+        {premium.webhook_configured && <KeyValue k="Webhook delivery" v="Set up" />}
         {premium.expires_at && (
           <KeyValue k="Runs out" v={formatIsoRelative(premium.expires_at)} />
         )}

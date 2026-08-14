@@ -3,14 +3,18 @@ import type {
   Guild,
   Channel,
   Role,
+  AuditLogPage,
   BumpBot,
   SettingsResponse,
   SettingsPatch,
   GuildSettings,
   GuildBumpStats,
   GuildOverview,
+  MemberEntitlements,
+  MemberReminder,
   ScopeGuild,
   DeleteUserDataResponse,
+  UserDataSummary,
 } from "./types";
 import { apiFetch, apiUrl } from "../_engine/api/http";
 
@@ -54,9 +58,31 @@ export const api = {
   guildBumpStats: (guildId: string) =>
     apiFetch<GuildBumpStats>(`/api/guilds/${guildId}/bump-stats`),
 
+  // Member tier - gated on being IN the server, not on managing it. Each is
+  // fetched on its own so one failure never blanks the others.
+  memberBumps: (guildId: string) =>
+    apiFetch<GuildBumpStats>(`/api/guilds/${guildId}/member/bumps`),
+  memberReminder: (guildId: string) =>
+    apiFetch<MemberReminder>(`/api/guilds/${guildId}/member/reminder`),
+  memberEntitlements: (guildId: string) =>
+    apiFetch<MemberEntitlements>(`/api/guilds/${guildId}/member/entitlements`),
+
+  // Change history, newest first. `before` is the previous page's next_cursor.
+  auditLog: (guildId: string, before?: string | null, limit = 50) =>
+    apiFetch<AuditLogPage>(
+      `/api/guilds/${guildId}/audit-log?limit=${limit}` +
+        (before ? `&before=${encodeURIComponent(before)}` : ""),
+    ),
+
   // Privacy page (mirrors TheHost's /api/user/* surface).
   userGuilds: (withData = false) =>
     apiFetch<ScopeGuild[]>(`/api/user/guilds${withData ? "?with_data=true" : ""}`),
+  userDataSummary: (guildId?: string | null) =>
+    apiFetch<UserDataSummary>(
+      guildId
+        ? `/api/user/data/summary?guild_id=${encodeURIComponent(guildId)}`
+        : "/api/user/data/summary",
+    ),
   exportUserDataUrl: (guildId?: string | null) =>
     apiUrl(
       guildId
@@ -75,10 +101,21 @@ export function inviteLink(baseUrl: string, guildId: string): string {
   return `${baseUrl}&guild_id=${guildId}`;
 }
 
+/** How many servers track each bump bot. Counts only - nothing identifies a server. */
+export interface PublicBotCount {
+  key: string;
+  name: string;
+  servers: number;
+}
+
 export interface PublicStats {
   servers: number;
   bots_tracked: number;
   premium_servers: number;
+  /** Servers with a bump channel, a role to ping AND at least one bot chosen.
+   *  Optional so a cached older payload from before this field still renders. */
+  servers_ready?: number;
+  per_bot?: PublicBotCount[];
 }
 
 export async function fetchPublicStats(): Promise<PublicStats | null> {

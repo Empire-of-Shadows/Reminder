@@ -19,7 +19,13 @@ from dashboard.config import BOT_TOKEN, MANAGE_GUILD_PERMISSION
 from dashboard.services import stats as stats_service
 from storage.config_manager import get_guild_config_manager
 from storage.settings.collections import db_manager
-from storage.sub_systems.bump_config import BOT_DISPLAY_NAMES, SUPPORTED_BOTS
+from storage.sub_systems.bump_config import (
+    BOT_DISPLAY_NAMES,
+    BUMP_BOTS,
+    BUMP_BOTS_CHOICES,
+    BUMP_BOTS_PREMIUM,
+    SUPPORTED_BOTS,
+)
 from storage.log import get_logger
 
 logger = get_logger("dashboard.routers.dashboard")
@@ -98,11 +104,14 @@ async def _guild_ids_with_config(guild_ids: list[str]) -> set[str]:
 
 @router.get("/guilds")
 async def guilds(session: dict = Depends(get_current_user)):
-    """Return guilds the user can manage, with bot status and panel-role tier.
+    """Return the user's guilds, with bot status and panel-role tier.
 
     Shows a guild if the user holds MANAGE_GUILD (admin - even when the bot is
-    absent, so they can invite it) OR holds a configured panel-access role in a
-    guild the bot is in.
+    absent, so they can invite it), holds a configured panel-access role in a
+    guild the bot is in, or is simply a member of a guild the bot is in. Plain
+    members get ``panel_role: "none"`` and the member view of that server.
+    Guilds where the user is a plain member AND the bot is absent are dropped:
+    there is nothing to show for them.
     """
     session_guilds = session.get("guilds", [])
     if not session_guilds:
@@ -129,9 +138,9 @@ async def guilds(session: dict = Depends(get_current_user)):
         gid = guild["id"]
         has_manage = _has_manage(guild)
         panel_role = panel_roles.get(gid, "none")
-        if not has_manage and panel_role == "none":
-            continue
         bot_present = gid in bot_guild_ids
+        if not has_manage and panel_role == "none" and not bot_present:
+            continue
         out.append({
             "id": gid,
             "name": guild["name"],
@@ -162,9 +171,28 @@ async def bot_invite_url():
 
 @router.get("/bump-bots")
 async def bump_bots():
-    """Return the supported bump bots with friendly display names."""
+    """Return the supported bump bots, their display names and their cooldowns.
+
+    ``choices`` is the same table the in-Discord panel offers, so the dashboard
+    cannot present a cooldown the panel would not - and cannot invent one the
+    listing service does not honour. Most services have exactly one choice; the
+    ones with two are where premium buys a shorter wait, flagged so the form can
+    say why an option is unavailable instead of just hiding it.
+    """
     return [
-        {"key": key, "name": BOT_DISPLAY_NAMES.get(key, key.title())}
+        {
+            "key": key,
+            "name": BOT_DISPLAY_NAMES.get(key, key.title()),
+            "default_cooldown": int(BUMP_BOTS[key]),
+            "choices": [
+                {
+                    "label": label,
+                    "seconds": int(seconds),
+                    "premium": int(seconds) == BUMP_BOTS_PREMIUM.get(key),
+                }
+                for label, seconds in BUMP_BOTS_CHOICES.get(key, {}).items()
+            ],
+        }
         for key in SUPPORTED_BOTS
     ]
 

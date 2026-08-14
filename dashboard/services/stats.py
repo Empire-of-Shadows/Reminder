@@ -1,7 +1,7 @@
 """Dashboard stats aggregation.
 
 Pulls everything from the per-guild bump config in the ``settings_guild_data``
-collection — the dashboard runs as a separate process from the bot, so there is
+collection - the dashboard runs as a separate process from the bot, so there is
 no live TimerHandler access. The next-due time for each bump bot is computed as
 ``last_bump + cooldown``, which is the useful signal for a bump reminder bot.
 
@@ -41,7 +41,14 @@ async def guild_is_premium(guild_id) -> bool:
 
 
 async def public_stats() -> dict:
-    """Ecosystem-wide counts for the public hero (no auth)."""
+    """Ecosystem-wide counts for the public hero (no auth).
+
+    Counts only - no server names, ids or settings values leave this function.
+    ``servers_ready`` and ``per_bot`` are aggregates over the same documents the
+    other two numbers come from, so nothing here is estimated or invented: a
+    server is "ready" when it has the three things the reminder cannot run
+    without (a bump channel, a role to ping, and at least one bot to watch).
+    """
     coll = db_manager.get_collection_manager(_CONFIG_COLLECTION)
 
     servers = await coll.count_documents({})
@@ -52,13 +59,30 @@ async def public_stats() -> dict:
     ).count_documents({"scope": "guild", "is_premium": True})
 
     # Sum of enabled bots across every guild = total bump bots being tracked.
-    docs = await coll.find_many({}, projection={"enabled_bots": 1})
-    bots_tracked = sum(len(doc.get("enabled_bots") or []) for doc in docs)
+    docs = await coll.find_many(
+        {}, projection={"enabled_bots": 1, "bump_channel": 1, "bump_role": 1}
+    )
+    bots_tracked = 0
+    servers_ready = 0
+    per_bot: dict[str, int] = {key: 0 for key in BUMP_BOTS}
+    for doc in docs:
+        enabled = [str(b) for b in (doc.get("enabled_bots") or [])]
+        bots_tracked += len(enabled)
+        for key in enabled:
+            if key in per_bot:
+                per_bot[key] += 1
+        if enabled and doc.get("bump_channel") and doc.get("bump_role"):
+            servers_ready += 1
 
     return {
         "servers": int(servers),
         "bots_tracked": int(bots_tracked),
         "premium_servers": int(premium_servers),
+        "servers_ready": int(servers_ready),
+        "per_bot": [
+            {"key": key, "name": BOT_DISPLAY_NAMES.get(key, key.title()), "servers": count}
+            for key, count in per_bot.items()
+        ],
     }
 
 

@@ -31,6 +31,7 @@ logger = get_logger("dashboard.services.user_data")
 
 AUDIT_COLLECTION = "audit_log"
 ENTITLEMENTS_COLLECTION = "entitlements"
+PREMIUM_STATE_COLLECTION = "premium_state"
 
 REDACTED_NAME = "[redacted]"
 
@@ -81,6 +82,10 @@ def _entitlements():
     return db_manager.get_collection_manager(ENTITLEMENTS_COLLECTION)
 
 
+def _premium_state():
+    return db_manager.get_collection_manager(PREMIUM_STATE_COLLECTION)
+
+
 def _serializable(doc: dict) -> dict:
     """Drop Mongo's ``_id`` and hand back plain values (json dumps with default=str
     finishes the job for datetimes)."""
@@ -122,6 +127,22 @@ async def fetch_entitlements(user_id: str, guild_id: str | None) -> list[dict]:
     return [_serializable(d) for d in docs]
 
 
+async def fetch_premium_state(user_id: str) -> dict | None:
+    """The engine's derived ``user:<id>`` premium doc, if one was ever computed.
+
+    Read-only and account-wide: it is derived from the entitlements above rather
+    than written independently, so it is never scoped by server and is never
+    erased (erasing it would only make the derived state disagree with the
+    records it comes from until the next recompute).
+    """
+    try:
+        doc = await _premium_state().find_one({"_id": f"user:{user_id}"})
+    except Exception:
+        logger.warning("premium_state lookup failed for user %s", user_id, exc_info=True)
+        return None
+    return _serializable(doc) if doc else None
+
+
 async def export_all(user_id: str, guild_id: str | None = None) -> dict:
     """Everything ImperialReminder holds against this account, optionally one server."""
     return {
@@ -135,6 +156,44 @@ async def export_all(user_id: str, guild_id: str | None = None) -> dict:
         ),
         "audit_log_entries": await fetch_audit_entries(user_id, guild_id),
         "premium_entitlements": await fetch_entitlements(user_id, guild_id),
+        # Account-wide by definition; included whole even when a server scope is
+        # selected, and labelled as such so the file is not misread.
+        "premium_state": await fetch_premium_state(user_id),
+    }
+
+
+async def summary(user_id: str, guild_id: str | None = None) -> dict:
+    """How many records of each kind exist for this account, in this scope.
+
+    Counted live from the same filters ``export_all`` and ``erase_all`` use, so
+    the number on the page is the number in the file. Each count is independent:
+    a collection that cannot be read comes back as ``None``, which the page has
+    to render as "could not be counted" rather than as a confident zero.
+    """
+    audit_count: int | None
+    entitlement_count: int | None
+    try:
+        audit_count = int(await _audit().count_documents(_audit_filter(user_id, guild_id)))
+    except Exception:
+        logger.warning("audit count failed for user %s", user_id, exc_info=True)
+        audit_count = None
+    try:
+        entitlement_count = int(
+            await _entitlements().count_documents(_entitlement_filter(user_id, guild_id))
+        )
+    except Exception:
+        logger.warning("entitlement count failed for user %s", user_id, exc_info=True)
+        entitlement_count = None
+
+    # Deliberately no "already redacted" count. Redaction nulls the very id
+    # fields these filters match on, so an already-redacted entry is invisible
+    # to this query by design - reporting it as 0 would read as "nothing was
+    # ever erased" rather than "erased records no longer name you".
+    return {
+        "user_id": str(user_id),
+        "guild_id": str(guild_id) if guild_id is not None else None,
+        "audit_log_entries": audit_count,
+        "premium_entitlements": entitlement_count,
     }
 
 

@@ -250,12 +250,22 @@ def _entry_actor(doc: dict) -> str | None:
 
 
 def _entry_row(doc: dict) -> dict:
+    """One audit entry as the overview's change row.
+
+    Three writers, three shapes: the admin panel nests section/key inside
+    ``details``, this dashboard writes them at the top level (the engine's
+    canonical ``log_config_change`` shape), and the premium cog writes a
+    ``category``. All three are read here so a server's recent-changes list
+    shows web edits and panel edits as the same kind of thing.
+    """
     details = doc.get("details") if isinstance(doc.get("details"), dict) else {}
     action = str(doc.get("action") or "")
     return {
         "action": action,
-        "section": str(details.get("section") or doc.get("category") or ""),
-        "key": str(details.get("key") or ""),
+        "section": str(
+            details.get("section") or doc.get("section") or doc.get("category") or ""
+        ),
+        "key": str(details.get("key") or doc.get("key") or ""),
         "actor": _entry_actor(doc),
         "at": _iso(doc.get("created_at")),
     }

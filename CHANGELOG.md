@@ -5,6 +5,36 @@ For the technical, commit-level history, see git.
 
 ## [Unreleased] - 2026-08-13
 
+### Added
+- **Everyone in your server can use the dashboard now, not just its managers.** Sign in and any
+  server you share with the bot appears, opening on a page that answers the question a member
+  actually has: when is the next bump due, and **will I be pinged for it?** If you hold the
+  server's reminder role it says so; if you do not, it says that too, and if we cannot check your
+  roles at that moment it says we could not check rather than guessing. Members see timings and
+  status only - never the server's channels, roles or setup.
+- **"What you can use" on every server page.** A plain-language summary of what the server
+  unlocks: whether it has premium, whether its reminders use custom wording or the standard one,
+  which listing services allow a shorter wait and whether that is switched on, and the two
+  commands anyone can run.
+- **Server managers see their own reminders first.** If you manage a server, your personal
+  section is at the top of the page and the server overview follows underneath. You are a member
+  of your server before you are its administrator.
+- **A Change history page.** Settings, then Change history, shows every setting anyone has
+  changed in your server: who changed it, whether they used Discord or the dashboard, what it was
+  and what it became. Older changes load on demand, and entries are kept for a year.
+- **Changes made on the dashboard are now recorded.** Until now only edits made from the
+  in-Discord panel appeared in a server's history, so anything changed on the web was invisible.
+  Both are recorded the same way, which also means the web edits show up in your personal data
+  export.
+- **Per-bot cooldowns moved onto the dashboard.** A new Cooldowns section lets you set how long
+  the bot waits before saying a service can be bumped again. Services with a single fixed cooldown
+  are listed as fixed rather than given a pointless dropdown, and a shorter premium-only wait
+  cannot be picked on a server without premium - it is refused with a reason instead of being
+  quietly ignored.
+- **A Terms of Service page**, linked from the footer of every page alongside the privacy policy.
+- **The login page now says how the bot is actually being used**: how many servers are fully set
+  up, and how many servers are watching each listing service.
+
 ### Fixed
 - On phones, the server panel on the settings hub now shows its close button and its server
   icon in full instead of cutting them off at the panel's rounded edge, and the close button
@@ -22,10 +52,22 @@ For the technical, commit-level history, see git.
   reminder message needs premium. If your server has written one without premium, the dashboard
   now says so plainly instead of showing it as configured while the standard reminder goes out.
 - **The settings page is now a list of sections instead of one long form.** Bumping, bump bots,
-  the live countdown, the reminder wording and who can manage each have their own page, with a
-  search box, a badge showing what still needs setting up, and a panel beside the form showing
-  what that setting is doing right now. Saving works exactly as before - one Save button that
-  saves everything on the page - and your unsaved edits survive switching between sections.
+  cooldowns, the live countdown, the reminder wording and who can manage each have their own page,
+  with a search box, a badge showing what still needs setting up, and a panel beside the form
+  showing what that setting is doing right now.
+- **Each settings section now saves on its own.** Changing your reminder role no longer rewrites
+  your custom message, your bot list and your manager roles along with it. Every section has its
+  own Save button, a section with unsaved edits is marked **Unsaved** in the list, your edits
+  still survive moving between sections, and moving away from a section you have not saved asks
+  first instead of letting you lose it quietly.
+- **The privacy page now shows what is actually held about you.** It counts the records that name
+  your account - for one server or all of them - before you decide whether to download or erase
+  them, spells out exactly what the download contains, and says plainly what stays behind after an
+  erasure and why: the record that a setting changed belongs to the server, so erasing removes
+  your name and ID from it rather than deleting the server's history.
+- **The privacy policy has been corrected and expanded.** It no longer mentions premium redemption
+  codes, which the bot no longer has; it now describes the settings-change records and how long
+  they are kept, and it explains erasure-by-redaction and links to the self-service page.
 - **Everything reads properly on a phone.** The dashboard, settings and the Web of Servers all
   collapse to a single column on a narrow screen instead of squeezing content off the side, and
   the header no longer overlaps itself.

@@ -22,6 +22,34 @@ async def get_current_user(
     record_actor(request, session)
     return session
 
+def user_is_guild_member(session: dict, guild_id: str) -> bool:
+    """True when the cached session guild list contains this guild.
+
+    The session guild list is Discord's own answer to "which servers is this
+    account in", refreshed by ``refresh_guilds_if_stale``. It is the only
+    membership signal available without a per-request bot-token call.
+    """
+    return any(str(guild.get("id")) == str(guild_id) for guild in session.get("guilds", []))
+
+
+async def require_guild_member(
+    guild_id: str,
+    session: dict = Depends(get_current_user),
+) -> dict:
+    """FastAPI dependency for the member tier: signed in AND in this server.
+
+    Deliberately NOT ``require_panel_access``. Routes behind this gate answer
+    "what is this server doing for me, a member" and must never return anything
+    only a manager should see - no channel ids, no role ids, no setup values.
+    """
+    if not user_is_guild_member(session, guild_id):
+        raise HTTPException(
+            status_code=404,
+            detail="You are not a member of this server (or your session is stale).",
+        )
+    return session
+
+
 def user_can_manage_guild(session: dict, guild_id: str) -> bool:
     for guild in session.get("guilds", []):
         if str(guild["id"]) == str(guild_id):

@@ -7,6 +7,7 @@ import type {
   GuildOverview,
   GuildSettings,
   Role,
+  SettingsPatch,
 } from "../api/types";
 import { formatError } from "../_engine/api/formatError";
 import {
@@ -15,30 +16,48 @@ import {
   FRow,
   MultiOptionField,
   MultiRoleField,
+  OptionSelect,
   PickerStatusProvider,
   RoleField,
   TextareaField,
   ToggleField,
 } from "../_engine/components/settings/fields";
 import AppHeader from "../components/AppHeader";
+import ConfirmDialog from "../components/ConfirmDialog";
 import PageSkeleton from "../components/PageSkeleton";
 import ContextColumn from "../components/settings/ContextColumn";
+import { formatDuration } from "../components/overview/format";
 
 /*
  * Per-guild settings.
  *
  * The four full-width cards this replaced sat in one uncapped column, so a
- * single dropdown got a box as wide as the monitor. The layout is now the
- * shared engine one: a rail with a search box, a reading-width form column,
- * and a context column showing what the selected setting is actually doing.
+ * single dropdown got a box as wide as the monitor. The layout is the shared
+ * engine one: a rail with a search box, a reading-width form column, and a
+ * context column showing what the selected setting is actually doing.
  *
- * The save model is unchanged on purpose. There is one Save button and it
- * sends the same whole-form payload it always did, which the API turns into a
- * surgical dotted $set of the whitelisted keys. Edits survive moving around the
- * rail, so nothing is lost by looking at another section before saving.
+ * The save model changed on purpose. One Save button used to send every field
+ * on the page, so opening Settings to change the reminder role also rewrote the
+ * custom message, the bot list and the manager roles - and the savebar said so
+ * ("Saving writes every section on this page"), which is a warning where a
+ * design would do. Each rail section now owns its own Save button, its own
+ * dirty state and its own Unsaved badge, and saving one leaves unsaved edits in
+ * the others exactly where they were. Moving away from a section with unsaved
+ * edits asks first.
  */
 
-type Slug = "bumps" | "bots" | "timers" | "message" | "access";
+type Slug = "bumps" | "bots" | "cooldowns" | "timers" | "message" | "access";
+
+/** The settings keys each rail section owns. Saving a section sends these and
+ *  nothing else, and the server's reply is merged back over these alone. */
+const SECTION_KEYS: Record<Slug, string[]> = {
+  bumps: ["bump_channel", "bump_role"],
+  bots: ["enabled_bots"],
+  cooldowns: ["bot_delay"],
+  timers: ["timers_channel", "timers_message"],
+  message: ["custom_message"],
+  access: ["roles"],
+};
 
 interface RailItem {
   slug: Slug;
@@ -48,6 +67,8 @@ interface RailItem {
   title: string;
   /** Plain-language description of what this does for the server. */
   blurb: string;
+  /** Label on this section's Save button. */
+  saveLabel: string;
   /** Field labels and help text, for the rail search box. */
   search: string[];
 }
@@ -62,6 +83,7 @@ const RAIL_GROUPS: { name: string; items: RailItem[] }[] = [
         title: "Bumping",
         blurb:
           "The channel you bump in, and the role the bot pings when it is time to bump again. Without both of these there is nothing to watch and nobody to tell.",
+        saveLabel: "Save bumping",
         search: ["Bump channel", "Reminder role", "Role to ping", "Where you bump"],
       },
       {
@@ -70,7 +92,25 @@ const RAIL_GROUPS: { name: string; items: RailItem[] }[] = [
         title: "Bump bots to track",
         blurb:
           "The listing services this server bumps on. The bot only times the ones you tick here, so leave out anything you do not use.",
+        saveLabel: "Save bump bots",
         search: ["Disboard", "BumpIt", "Bump4You", "WeBump", "OneBump", "Unfocused", "Services"],
+      },
+      {
+        slug: "cooldowns",
+        label: "Cooldowns",
+        title: "How long between bumps",
+        blurb:
+          "How long the bot waits before telling you a service can be bumped again. Most services have one fixed cooldown and nothing to choose; a couple allow a shorter wait on a premium server.",
+        saveLabel: "Save cooldowns",
+        search: [
+          "Cooldown",
+          "Delay",
+          "How often",
+          "Wait",
+          "30 minutes",
+          "90 minutes",
+          "Premium",
+        ],
       },
       {
         slug: "timers",
@@ -78,6 +118,7 @@ const RAIL_GROUPS: { name: string; items: RailItem[] }[] = [
         title: "Live countdown",
         blurb:
           "An optional message the bot keeps up to date with how long is left on each bump, so anyone can check without asking.",
+        saveLabel: "Save countdown",
         search: ["Timers channel", "Countdown", "Timer message"],
       },
       {
@@ -86,6 +127,7 @@ const RAIL_GROUPS: { name: string; items: RailItem[] }[] = [
         title: "Custom reminder message",
         blurb:
           "Replace the standard reminder with your own wording. This is a premium feature - the standard reminder is used until this server has premium.",
+        saveLabel: "Save wording",
         search: ["Custom message", "Wording", "bump_role", "bots", "Premium"],
       },
     ],
@@ -99,6 +141,7 @@ const RAIL_GROUPS: { name: string; items: RailItem[] }[] = [
         title: "Who can manage",
         blurb:
           "Members holding any of these roles get the same access to this dashboard and the in-Discord admin panel as someone with Manage Server. Everyone else sees nothing here.",
+        saveLabel: "Save manager roles",
         search: ["Panel access", "Admin roles", "Permissions", "Manage Server"],
       },
     ],
@@ -109,9 +152,64 @@ const RAIL_ITEMS: RailItem[] = RAIL_GROUPS.flatMap((g) => g.items);
 
 const DEFAULT_SLUG: Slug = "bumps";
 
+/** Terms that reach the change-history link in the rail search. */
+const HISTORY_SEARCH = [
+  "Change history",
+  "Audit log",
+  "Who changed a setting and when",
+];
+
 function parseSlug(raw: string | null): Slug {
   const hit = RAIL_ITEMS.find((i) => i.slug === raw);
   return hit ? hit.slug : DEFAULT_SLUG;
+}
+
+/**
+ * A section's values, normalized so the dirty check answers the question a
+ * person would ask. Sorting the lists means reordering a role picker is not
+ * reported as an edit, and the ?? defaults mean a missing key and an empty one
+ * compare equal.
+ */
+function sectionSnapshot(slug: Slug, s: GuildSettings): string {
+  switch (slug) {
+    case "bumps":
+      return JSON.stringify([s.bump_channel || "", s.bump_role || ""]);
+    case "bots":
+      return JSON.stringify([...(s.enabled_bots ?? [])].sort());
+    case "cooldowns":
+      return JSON.stringify(
+        Object.entries(s.bot_delay ?? {})
+          .map(([k, v]) => [k, Number(v)] as [string, number])
+          .sort((a, b) => a[0].localeCompare(b[0])),
+      );
+    case "timers":
+      return JSON.stringify([s.timers_channel || "", !!s.timers_message]);
+    case "message":
+      return JSON.stringify(s.custom_message ?? "");
+    case "access":
+      return JSON.stringify([...(s.roles?.admin_role_ids ?? [])].sort());
+  }
+}
+
+/** The patch one section sends. Only its own keys, in the wire shape. */
+function sectionPatch(slug: Slug, s: GuildSettings): SettingsPatch {
+  switch (slug) {
+    case "bumps":
+      return { bump_channel: s.bump_channel || "", bump_role: s.bump_role || "" };
+    case "bots":
+      return { enabled_bots: s.enabled_bots ?? [] };
+    case "cooldowns":
+      return { bot_delay: s.bot_delay ?? {} };
+    case "timers":
+      return {
+        timers_channel: s.timers_channel || "",
+        timers_message: !!s.timers_message,
+      };
+    case "message":
+      return { custom_message: s.custom_message ?? "" };
+    case "access":
+      return { roles: { admin_role_ids: s.roles?.admin_role_ids ?? [] } };
+  }
 }
 
 type BadgeTone = "ok" | "warn" | "";
@@ -127,7 +225,7 @@ interface Badge {
  * "Set up" is the load-bearing one: switched on but missing something it cannot
  * run without, which is the state that looks fine and silently does nothing.
  */
-function railBadge(slug: Slug, d: GuildSettings): Badge {
+function railBadge(slug: Slug, d: GuildSettings, bots: BumpBot[]): Badge {
   switch (slug) {
     case "bumps":
       if (!d.bump_channel) return { text: "Set up", tone: "warn" };
@@ -135,6 +233,16 @@ function railBadge(slug: Slug, d: GuildSettings): Badge {
     case "bots": {
       const count = (d.enabled_bots ?? []).length;
       return count > 0 ? { text: String(count), tone: "ok" } : { text: "Set up", tone: "warn" };
+    }
+    case "cooldowns": {
+      const delays = d.bot_delay ?? {};
+      const changed = bots.filter((bot) => {
+        const fallback = bot.default_cooldown;
+        if (fallback === undefined) return false;
+        const current = Number(delays[bot.key] ?? fallback);
+        return current !== fallback;
+      }).length;
+      return changed > 0 ? { text: "Custom", tone: "ok" } : { text: "Default", tone: "" };
     }
     case "timers":
       if (!d.timers_message) return { text: "Off", tone: "" };
@@ -162,10 +270,11 @@ export default function SettingsPage() {
   const [settings, setSettings] = useState<GuildSettings | null>(null);
   const [overview, setOverview] = useState<GuildOverview | null>(null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [savingSlug, setSavingSlug] = useState<Slug | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
+  const [saved, setSaved] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [pendingSlug, setPendingSlug] = useState<Slug | null>(null);
 
   const slug = parseSlug(searchParams.get("s"));
 
@@ -228,41 +337,59 @@ export default function SettingsPage() {
 
   const enabled = useMemo(() => new Set(settings?.enabled_bots ?? []), [settings]);
 
+  // Premium decides whether the shorter cooldowns can be picked. The overview
+  // is optional, so when it did not load this stays null - unknown, not false -
+  // and the options are left selectable for the server to answer on save.
+  const isPremium = overview?.premium?.is_premium ?? null;
+
   function update<K extends keyof GuildSettings>(key: K, value: GuildSettings[K]) {
     setSettings((s) => (s ? { ...s, [key]: value } : s));
-    setSaved(false);
+    setSaved(null);
   }
 
-  async function save() {
+  function setCooldown(botKey: string, seconds: number) {
+    setSettings((s) =>
+      s ? { ...s, bot_delay: { ...(s.bot_delay ?? {}), [botKey]: seconds } } : s,
+    );
+    setSaved(null);
+  }
+
+  const isDirty = (target: Slug): boolean =>
+    !!settings &&
+    !!lastSaved &&
+    sectionSnapshot(target, settings) !== sectionSnapshot(target, lastSaved);
+
+  async function save(target: Slug) {
     if (!settings) return;
-    setSaving(true);
+    setSavingSlug(target);
     setError(null);
-    setSaved(false);
+    setSaved(null);
     try {
-      const updated = await api.saveSettings(guildId, {
-        bump_channel: settings.bump_channel || "",
-        bump_role: settings.bump_role || "",
-        timers_channel: settings.timers_channel || "",
-        timers_message: !!settings.timers_message,
-        enabled_bots: settings.enabled_bots ?? [],
-        custom_message: settings.custom_message ?? "",
-        roles: {
-          admin_role_ids: settings.roles?.admin_role_ids ?? [],
-        },
-      });
-      setSettings(updated);
+      const updated = await api.saveSettings(guildId, sectionPatch(target, settings));
+      // The reply is the canonical whole config, so it becomes the new saved
+      // baseline. Only this section's keys are merged into the draft, which is
+      // what keeps unsaved edits elsewhere on the page intact.
       setLastSaved(updated);
-      setSaved(true);
+      setSettings((prev) => {
+        if (!prev) return updated;
+        const merged = { ...prev };
+        for (const key of SECTION_KEYS[target]) {
+          merged[key] = updated[key];
+        }
+        return merged;
+      });
+      setSaved(RAIL_ITEMS.find((i) => i.slug === target)?.title ?? "Settings");
     } catch (e) {
       setError(formatError(e));
     } finally {
-      setSaving(false);
+      setSavingSlug(null);
     }
   }
 
   if (loading) return <PageSkeleton />;
 
   const active = RAIL_ITEMS.find((i) => i.slug === slug) ?? RAIL_ITEMS[0];
+  const activeDirty = isDirty(active.slug);
 
   const goTo = (next: Slug) => {
     setSearchParams(
@@ -275,8 +402,14 @@ export default function SettingsPage() {
     );
   };
 
-  const dirty =
-    !!settings && !!lastSaved && JSON.stringify(stableForm(settings)) !== JSON.stringify(stableForm(lastSaved));
+  const requestSlug = (next: Slug) => {
+    if (next === slug) return;
+    if (activeDirty) {
+      setPendingSlug(next);
+      return;
+    }
+    goTo(next);
+  };
 
   const q = query.trim().toLowerCase();
   const itemMatches = (item: RailItem): boolean => {
@@ -285,7 +418,13 @@ export default function SettingsPage() {
     if (item.title.toLowerCase().includes(q)) return true;
     return item.search.some((s) => s.toLowerCase().includes(q));
   };
-  const anyMatch = RAIL_ITEMS.some(itemMatches);
+  const historyMatches = !q || HISTORY_SEARCH.some((s) => s.toLowerCase().includes(q));
+  const anyMatch = RAIL_ITEMS.some(itemMatches) || historyMatches;
+
+  // Only the services that actually offer a choice get a dropdown. A select
+  // with one option is a control that cannot be operated.
+  const adjustable = bots.filter((bot) => (bot.choices?.length ?? 0) > 1);
+  const fixed = bots.filter((bot) => (bot.choices?.length ?? 0) <= 1);
 
   return (
     <div className="app-layout">
@@ -306,7 +445,7 @@ export default function SettingsPage() {
         )}
         {saved && (
           <div className="alert success" role="status" style={{ marginTop: 16 }}>
-            Settings saved.
+            {saved} saved.
           </div>
         )}
 
@@ -329,12 +468,16 @@ export default function SettingsPage() {
               <nav className="set-rail" aria-label="Settings sections">
                 {RAIL_GROUPS.map((group) => {
                   const items = group.items.filter(itemMatches);
-                  if (items.length === 0) return null;
+                  const showHistory = group.name === "Access" && historyMatches;
+                  if (items.length === 0 && !showHistory) return null;
                   return (
                     <Fragment key={group.name}>
                       <div className="set-rail__grp">{group.name}</div>
                       {items.map((item) => {
-                        const badge = railBadge(item.slug, settings);
+                        const dirty = isDirty(item.slug);
+                        const badge = dirty
+                          ? { text: "Unsaved", tone: "warn" as BadgeTone }
+                          : railBadge(item.slug, settings, bots);
                         return (
                           <button
                             key={item.slug}
@@ -343,7 +486,7 @@ export default function SettingsPage() {
                               "set-rail__item" + (item.slug === slug ? " is-active" : "")
                             }
                             aria-current={item.slug === slug ? "page" : undefined}
-                            onClick={() => goTo(item.slug)}
+                            onClick={() => requestSlug(item.slug)}
                           >
                             <span>{item.label}</span>
                             <span
@@ -357,6 +500,14 @@ export default function SettingsPage() {
                           </button>
                         );
                       })}
+                      {showHistory && (
+                        <Link
+                          className="set-rail__item"
+                          to={`/settings/${guildId}/audit-log`}
+                        >
+                          <span>Change history</span>
+                        </Link>
+                      )}
                     </Fragment>
                   );
                 })}
@@ -403,6 +554,71 @@ export default function SettingsPage() {
                       options={bots.map((b) => [b.key, b.name] as [string, string])}
                       onChange={(v) => update("enabled_bots", v)}
                     />
+                  </Fieldset>
+                )}
+
+                {slug === "cooldowns" && (
+                  <Fieldset>
+                    {adjustable.length === 0 ? (
+                      <p className="eos-muted">
+                        {bots.length === 0
+                          ? "The list of bump bots could not be loaded, so the cooldowns cannot be shown. Reload the page to try again."
+                          : "None of the supported services offer a choice of cooldown, so there is nothing to set here."}
+                      </p>
+                    ) : (
+                      <>
+                        <FRow>
+                          {adjustable.map((bot) => {
+                            const current = Number(
+                              settings.bot_delay?.[bot.key] ?? bot.default_cooldown ?? 0,
+                            );
+                            const options = (bot.choices ?? []).map(
+                              (choice) =>
+                                [choice.seconds, choice.label] as [number, string],
+                            );
+                            return (
+                              <OptionSelect<number>
+                                key={bot.key}
+                                label={`${bot.name} cooldown`}
+                                value={current}
+                                options={options}
+                                onChange={(v) => setCooldown(bot.key, v)}
+                                description={`How long the bot waits after a ${bot.name} bump before it says the service is ready again.`}
+                              />
+                            );
+                          })}
+                        </FRow>
+                        {/* Said once under the row rather than repeated in every
+                            field's help text, which read as a wall of the same
+                            sentence when more than one service offers it. */}
+                        {isPremium === false &&
+                          adjustable.some((bot) =>
+                            (bot.choices ?? []).some((c) => c.premium),
+                          ) && (
+                            <p className="eos-muted">
+                              The options marked Premium need this server to have premium.
+                              Picking one without it is refused on save rather than quietly
+                              ignored, so a cooldown shown here is always the one being used.
+                            </p>
+                          )}
+                      </>
+                    )}
+                    {fixed.length > 0 && (
+                      <p className="eos-muted">
+                        Fixed by the listing service, with nothing to choose:{" "}
+                        {fixed
+                          .map(
+                            (bot) =>
+                              `${bot.name} (${
+                                bot.default_cooldown
+                                  ? formatDuration(bot.default_cooldown)
+                                  : "standard"
+                              })`,
+                          )
+                          .join(", ")}
+                        .
+                      </p>
+                    )}
                   </Fieldset>
                 )}
 
@@ -457,14 +673,14 @@ export default function SettingsPage() {
                   <button
                     type="button"
                     className="btn btn-primary"
-                    disabled={saving}
-                    onClick={() => void save()}
+                    disabled={!activeDirty || savingSlug === active.slug}
+                    onClick={() => void save(active.slug)}
                   >
-                    {saving ? "Saving..." : "Save settings"}
+                    {savingSlug === active.slug ? "Saving..." : active.saveLabel}
                   </button>
                   <span className="eos-muted" style={{ fontSize: 13 }}>
-                    {dirty
-                      ? "Unsaved changes. Saving writes every section on this page."
+                    {activeDirty
+                      ? "Unsaved changes. Saving writes only this section."
                       : "Everything here is saved"}
                   </span>
                 </div>
@@ -484,19 +700,20 @@ export default function SettingsPage() {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={pendingSlug !== null}
+        title="You have unsaved changes"
+        message={`"${active.title}" has changes you have not saved yet. They are kept while you move around this page, but they are lost if you reload or close it.`}
+        confirmLabel="Switch anyway"
+        cancelLabel="Stay here"
+        onConfirm={() => {
+          const next = pendingSlug;
+          setPendingSlug(null);
+          if (next) goTo(next);
+        }}
+        onCancel={() => setPendingSlug(null)}
+      />
     </div>
   );
-}
-
-/** The saved-versus-draft comparison, over the fields the Save button sends. */
-function stableForm(s: GuildSettings) {
-  return {
-    bump_channel: s.bump_channel || "",
-    bump_role: s.bump_role || "",
-    timers_channel: s.timers_channel || "",
-    timers_message: !!s.timers_message,
-    enabled_bots: [...(s.enabled_bots ?? [])].sort(),
-    custom_message: s.custom_message ?? "",
-    admin_role_ids: [...(s.roles?.admin_role_ids ?? [])].sort(),
-  };
 }

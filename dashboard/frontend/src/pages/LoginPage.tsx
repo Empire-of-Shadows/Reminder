@@ -24,6 +24,7 @@ export default function LoginPage() {
   return (
     <main className="login-main">
       <div className="login-hero">
+        <img className="login-mark" src="/brand/artifact-belltower.svg" alt="" />
         <h1>Imperial Reminder</h1>
         <p className="tagline">
           Sign in with Discord to manage your server's bump reminders. Your Empire of Shadows
@@ -78,19 +79,49 @@ export default function LoginPage() {
         </div>
 
         {stats && (
-          <div className="login-stats">
-            <span>
-              <span className="stat-num">{formatCount(stats.servers)}</span>servers
-            </span>
-            <span className="stat-sep">·</span>
-            <span>
-              <span className="stat-num">{formatCount(stats.bots_tracked)}</span>bots tracked
-            </span>
-            <span className="stat-sep">·</span>
-            <span>
-              <span className="stat-num">{formatCount(stats.premium_servers)}</span>premium
-            </span>
-          </div>
+          <>
+            <div className="login-stats">
+              <span>
+                <span className="stat-num">{formatCount(stats.servers)}</span>servers
+              </span>
+              <span className="stat-sep">·</span>
+              <span>
+                <span className="stat-num">{formatCount(stats.bots_tracked)}</span>bots tracked
+              </span>
+              {/* Only shown when the counter is actually in the payload - an older
+                  cached response has no field for it, and 0 would read as
+                  "nobody has finished setting up", which is a different claim. */}
+              {stats.servers_ready !== undefined && (
+                <>
+                  <span className="stat-sep">·</span>
+                  <span>
+                    <span className="stat-num">{formatCount(stats.servers_ready)}</span>fully set
+                    up
+                  </span>
+                </>
+              )}
+              <span className="stat-sep">·</span>
+              <span>
+                <span className="stat-num">{formatCount(stats.premium_servers)}</span>premium
+              </span>
+            </div>
+
+            {stats.per_bot && stats.per_bot.some((bot) => bot.servers > 0) && (
+              <p className="login-services">
+                Being watched right now:{" "}
+                {stats.per_bot
+                  .filter((bot) => bot.servers > 0)
+                  .map(
+                    (bot) =>
+                      `${bot.name} in ${formatCount(bot.servers)} ${
+                        bot.servers === 1 ? "server" : "servers"
+                      }`,
+                  )
+                  .join(", ")}
+                .
+              </p>
+            )}
+          </>
         )}
       </div>
       <div className="login-below" />

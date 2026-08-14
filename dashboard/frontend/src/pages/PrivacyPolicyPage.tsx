@@ -11,7 +11,7 @@ import AppHeader from "../components/AppHeader";
  * over a numbered `legal-doc` body. Renders without a session - it tries to
  * load the signed-in user only to personalise the header, and ignores failures.
  */
-const EFFECTIVE_DATE = "August 1, 2026";
+const EFFECTIVE_DATE = "August 13, 2026";
 
 export default function PrivacyPolicyPage() {
   const [user, setUser] = useState<User | null>(null);
@@ -25,6 +25,8 @@ export default function PrivacyPolicyPage() {
       <AppHeader user={user} />
       <div style={{ padding: "0 24px 24px" }}>
         <section className="dash-hero">
+          <div className="dash-hero__orb" />
+          <img className="dash-hero__sigil" src="/brand/artifact-belltower.svg" alt="" />
           <div className="dash-hero__copy">
             <span className="dash-hero__eyebrow">Legal</span>
             <h1 className="dash-hero__title">Privacy Policy</h1>
@@ -60,8 +62,14 @@ export default function PrivacyPolicyPage() {
                 your custom reminder message, and which roles may manage these settings.
               </li>
               <li>
-                <strong>Premium records</strong>: entitlement status for premium features (a user
-                ID and when the entitlement expires) and any premium redemption codes.
+                <strong>Premium records</strong>: entitlement status for premium features - who
+                granted it, who or which server it applies to, and when it expires.
+              </li>
+              <li>
+                <strong>A record of settings changes</strong>: when someone changes a server's
+                setup from the in-Discord panel or the dashboard, we record who changed it, what
+                changed, and when, so a server's managers can see their own history. These
+                entries are removed automatically after a year.
               </li>
               <li><strong>A session cookie</strong> that keeps you signed in to the dashboard.</li>
             </ul>
@@ -108,17 +116,30 @@ export default function PrivacyPolicyPage() {
             <p>
               We keep a server's bump configuration until a manager changes it or the bot is
               removed from the server, after which related configuration may be cleaned up. Premium
-              records are kept for the life of the entitlement. Login sessions expire automatically.
+              records are kept for the life of the entitlement. Settings-change records are removed
+              automatically one year after they were written. Login sessions expire automatically.
             </p>
           </section>
 
           <section className="section card">
             <h2 className="section-title" style={{ marginTop: 0 }}>7. Your choices and rights</h2>
             <p>
-              Because the bot stores no personal activity, there is nothing for an individual member
-              to opt out of. Server managers can view and change all stored configuration any time
-              from the <Link to="/settings">Settings</Link> page, or remove it by removing the bot
-              from the server. To request deletion of any data, contact{" "}
+              Because the bot stores no personal activity, there is nothing for an individual
+              member to opt out of. The <Link to="/me/privacy">Privacy &amp; Data</Link> page
+              shows you how many records name your account, lets you download all of them as a
+              file, and lets you erase them - for one server or for all of them.
+            </p>
+            <p>
+              Erasure works by <strong>redaction, not deletion</strong>. A settings-change entry
+              is the server's own record that something changed, and its managers rely on that
+              history, so erasing removes your name and Discord ID from the entry while the
+              entry itself stays. Premium grants are also kept: they are grant records rather
+              than personal data, and removing one would remove somebody's premium.
+            </p>
+            <p>
+              Server managers can view and change all stored configuration any time from the{" "}
+              <Link to="/settings">Settings</Link> page, or remove it by removing the bot from
+              the server. For anything the self-service page does not cover, contact{" "}
               <a href="mailto:support@eosofficial.club">support@eosofficial.club</a>.
             </p>
           </section>

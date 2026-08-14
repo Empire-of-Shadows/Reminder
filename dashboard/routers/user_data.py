@@ -75,6 +75,22 @@ async def user_guilds(
     return filtered
 
 
+@router.get("/user/data/summary")
+async def data_summary(
+    guild_id: str | None = Query(None),
+    session: dict = Depends(get_current_user),
+):
+    """How many records name this account, in the selected scope.
+
+    The privacy page shows this instead of describing the export in the
+    abstract: a user should be able to see that there are (say) four audit
+    entries before deciding whether to download or erase them.
+    """
+    user_id = str(session["user_id"])
+    gid = _resolve_guild_scope(session, guild_id)
+    return await user_data_service.summary(user_id, gid)
+
+
 @router.get("/user/data/export")
 async def export_data(
     guild_id: str | None = Query(None),

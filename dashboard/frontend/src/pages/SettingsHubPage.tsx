@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, inviteLink } from "../api/client";
-import type { Guild, User } from "../api/types";
+import type { Guild, GuildOverview, User } from "../api/types";
 import { formatError } from "../_engine/api/formatError";
+import { KeyValue, Tile } from "../_engine/components/overview/Tile";
 import AppHeader from "../components/AppHeader";
 import { GuildWebScene } from "../_engine/components/GuildWebScene";
+import { formatCountdown, formatRelative } from "../components/overview/format";
 
 /** Real Discord icon for a guild, or null so the scene draws its generated orb.
  *  Typed on the two fields it reads rather than on this bot's Guild, so it also
@@ -46,25 +48,52 @@ export default function SettingsHubPage() {
   }), [webGuilds]);
   const selected = webGuilds.find((g) => g.id === selectedId) ?? null;
 
+  // The blob's live rows. Fetched only when a node is picked, and only once per
+  // server - the web can hold a lot of nodes and nobody opens all of them.
+  const [overviews, setOverviews] = useState<Record<string, GuildOverview | null>>({});
+  const [overviewLoading, setOverviewLoading] = useState(false);
+  useEffect(() => {
+    if (!selectedId || selectedId in overviews) return;
+    const target = selectedId;
+    let alive = true;
+    setOverviewLoading(true);
+    api
+      .guildOverview(target)
+      .then((o) => {
+        if (alive) setOverviews((prev) => ({ ...prev, [target]: o }));
+      })
+      .catch(() => {
+        // null is the "asked and could not answer" marker; the panel says so
+        // rather than showing empty rows.
+        if (alive) setOverviews((prev) => ({ ...prev, [target]: null }));
+      })
+      .finally(() => {
+        if (alive) setOverviewLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [selectedId, overviews]);
+
   const message = error ? (
     <div className="alert danger" role="alert">{error}</div>
   ) : !guilds ? (
     <p className="eos-muted">Loading servers...</p>
   ) : webGuilds.length === 0 ? (
-    <div className="card">
-      <h3>No manageable servers</h3>
-      <p className="eos-muted">
-        You need Manage Server permission (or a configured admin role) in a Discord
-        server to manage Imperial Reminder.
+    <div className="ov-grid">
+      <Tile span={12} quiet title="No manageable servers">
+        <p className="ov-body">
+          You need Manage Server permission, or a role a manager has granted access to, in a
+          Discord server to manage Imperial Reminder there.
+        </p>
         {inviteUrl && (
-          <>
-            {" "}
-            <a href={inviteUrl} target="_blank" rel="noreferrer">
+          <div className="admin-actions">
+            <a className="btn btn-primary" href={inviteUrl} target="_blank" rel="noreferrer">
               Invite Imperial Reminder to a server
-            </a>.
-          </>
+            </a>
+          </div>
         )}
-      </p>
+      </Tile>
     </div>
   ) : null;
 
@@ -113,6 +142,10 @@ export default function SettingsHubPage() {
                   <SettingsActionPanel
                     guild={selected}
                     inviteUrl={inviteUrl}
+                    overview={
+                      selected.id in overviews ? overviews[selected.id] : undefined
+                    }
+                    overviewLoading={overviewLoading}
                     onNavigate={(path) => navigate(path)}
                   />
                 </>
@@ -128,10 +161,15 @@ export default function SettingsHubPage() {
 function SettingsActionPanel({
   guild,
   inviteUrl,
+  overview,
+  overviewLoading,
   onNavigate,
 }: {
   guild: Guild;
   inviteUrl: string | null;
+  /** undefined = not asked yet, null = asked and could not answer. */
+  overview: GuildOverview | null | undefined;
+  overviewLoading: boolean;
   onNavigate: (path: string) => void;
 }) {
   const iconUrl = guildIconUrl(guild);
@@ -153,6 +191,10 @@ function SettingsActionPanel({
         </div>
       </div>
 
+      {guild.bot_in_guild && (
+        <BlobFacts overview={overview} loading={overviewLoading} />
+      )}
+
       <div className="settings-blob__actions">
         {!guild.bot_in_guild ? (
           inviteUrl && (
@@ -166,9 +208,20 @@ function SettingsActionPanel({
             </a>
           )
         ) : (
-          <button className="btn btn-primary" onClick={() => onNavigate(`/settings/${guild.id}`)}>
-            Settings
-          </button>
+          <>
+            <button
+              className="btn btn-primary"
+              onClick={() => onNavigate(`/settings/${guild.id}`)}
+            >
+              Settings
+            </button>
+            <button
+              className="btn btn-secondary"
+              onClick={() => onNavigate(`/settings/${guild.id}/audit-log`)}
+            >
+              Change history
+            </button>
+          </>
         )}
       </div>
 
@@ -183,5 +236,70 @@ function SettingsActionPanel({
         </p>
       )}
     </>
+  );
+}
+
+/** The few live numbers worth pulling into the node panel. Nothing is shown as
+ *  zero when it is really unknown: a failed or missing section says so. */
+function BlobFacts({
+  overview,
+  loading,
+}: {
+  overview: GuildOverview | null | undefined;
+  loading: boolean;
+}) {
+  if (overview === undefined) {
+    return <p className="guild-invite-hint" style={{ marginTop: 0 }}>Loading this server...</p>;
+  }
+  if (overview === null) {
+    return (
+      <p className="guild-invite-hint" style={{ marginTop: 0 }}>
+        {loading
+          ? "Loading this server..."
+          : "This server's live status could not be loaded. Settings still open normally."}
+      </p>
+    );
+  }
+
+  const bumps = overview.bumps;
+  const changes = overview.changes;
+  const premium = overview.premium;
+
+  return (
+    <div style={{ margin: "4px 0 12px" }}>
+      <KeyValue
+        k="Bots tracked"
+        v={bumps ? bumps.enabled_count : "Not known"}
+      />
+      <KeyValue
+        k="Ready to bump"
+        v={bumps ? bumps.ready_count : "Not known"}
+      />
+      <KeyValue
+        k="Next bump"
+        v={
+          !bumps
+            ? "Not known"
+            : bumps.next_due !== null
+              ? formatCountdown(bumps.next_due, bumps.now)
+              : "Nothing waiting"
+        }
+      />
+      <KeyValue
+        k="Last bump"
+        v={
+          !bumps
+            ? "Not known"
+            : bumps.last_bump !== null
+              ? formatRelative(bumps.last_bump, bumps.now)
+              : "None seen yet"
+        }
+      />
+      <KeyValue
+        k="Changes recorded"
+        v={changes ? changes.total : "Not known"}
+      />
+      {premium?.is_premium && <KeyValue k="Premium" v={premium.tier ?? "Active"} />}
+    </div>
   );
 }

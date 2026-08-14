@@ -840,6 +840,14 @@ a:focus-visible {
   opacity: 0.4;
 }
 
+.login-services {
+  margin: 0;
+  max-width: 46ch;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
 .login-below {
   width: 100%;
   max-width: 680px;
@@ -847,36 +855,117 @@ a:focus-visible {
 }
 
 /* ── Site footer ────────────────────────────────────────────────────── */
-/* Bot-owned rather than the engine's AppFooter: this dashboard has no /terms
-   page, and the engine footer either links to one (dead link) or drops the
-   Privacy Policy link with legal={false}. Revisit when /terms exists. */
+/* The footer is the engine's AppFooter now that /terms exists, so its styles
+   come from _engine/components/styles/AppFooter.css. The bot-owned .site-footer
+   block that used to live here was a byte-for-byte duplicate of the engine's -
+   two rules for one element, silently diverging on the next engine change. */
 
-.site-footer {
+/* ── Destructive button + confirmation dialog ───────────────────────── */
+
+.btn-danger {
+  background: var(--danger);
+}
+.btn-danger:hover {
+  filter: brightness(1.1) saturate(110%);
+}
+
+.confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 0.4rem;
-  text-align: center;
-  padding: 1.25rem;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+.confirm-dialog {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 14px;
+  padding: 24px;
+  max-width: 440px;
+  width: calc(100% - 32px);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+.confirm-title {
+  margin: 0 0 8px;
+  font-size: 18px;
+  font-weight: 600;
+}
+.confirm-message {
+  margin: 0 0 20px;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+.confirm-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+/* ── Per-bot bump panels ────────────────────────────────────────────── */
+/* The engine's .ov-cols--3 packs to a 110px minimum, which still fits three
+   columns on a phone - and a column that narrow wraps "Reminder sent for this
+   bump" onto four lines. Raising the minimum drops it to two columns there
+   while leaving the desktop row (five services across an s12 tile) unchanged. */
+
+.bump-cols {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+/* ── Audit log table ────────────────────────────────────────────────── */
+/* The table is wider than a phone at any sensible column count, so it scrolls
+   inside its own box. The page body must never scroll sideways. */
+
+.audit-scroll {
+  overflow-x: auto;
+  margin: 0 -4px;
+  padding: 0 4px;
+}
+
+.audit-table {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.audit-table th {
+  text-align: left;
+  padding: 8px 10px;
   color: var(--text-muted);
-  font-size: 0.85rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--card-border);
+  white-space: nowrap;
 }
 
-.site-footer__links {
-  display: inline-flex;
-  align-items: center;
-  gap: 1rem;
+.audit-table td {
+  padding: 9px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  color: var(--text-2);
+  vertical-align: top;
 }
 
-.site-footer__links a {
+.audit-table tr:last-child td {
+  border-bottom: none;
+}
+
+.audit-table code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--glass-heavy);
+  font-family: var(--eos-font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  word-break: break-word;
+}
+
+.audit-table__when {
+  white-space: nowrap;
   color: var(--text-muted);
-  text-decoration: none;
-  transition: color 0.2s ease;
-}
-
-.site-footer__links a:hover {
-  color: var(--brand-light);
 }
 
 /* ── Legal documents (Privacy Policy): readable prose width ─────────── */

@@ -1,6 +1,6 @@
 import { Component, type ReactNode } from "react";
 import type { BumpBot, Channel, GuildOverview, GuildSettings, Role } from "../../api/types";
-import { changeLabel, formatCountdown, formatRelative } from "../overview/format";
+import { changeLabel, formatCountdown, formatDuration, formatRelative } from "../overview/format";
 
 /*
  * The right-hand column: what the selected setting is doing right now.
@@ -153,7 +153,31 @@ function ContextBody({ slug, draft, channels, roles, bots, overview }: ContextPr
       <KvCard
         title="Bump bots"
         rows={rows}
-        footer="Cooldowns per bot are set from the in-Discord admin panel."
+        footer="Untick a service and its timer stops - nothing is deleted, and its last bump is remembered if you turn it back on."
+      />
+    );
+  }
+
+  if (slug === "cooldowns") {
+    const enabled = new Set(draft.enabled_bots ?? []);
+    const delays = draft.bot_delay ?? {};
+    const rows: [string, string][] = bots.map((bot) => {
+      const fallback = bot.default_cooldown;
+      const current = Number(delays[bot.key] ?? fallback ?? 0);
+      const label = current ? formatDuration(current) : "Standard";
+      if (!enabled.has(bot.key)) return [bot.name, `${label} (not tracked)`];
+      if (fallback !== undefined && current !== fallback) return [bot.name, `${label} (changed)`];
+      return [bot.name, label];
+    });
+    return (
+      <KvCard
+        title="Waiting time"
+        rows={rows}
+        footer={
+          premium && !premium.is_premium
+            ? "The shorter waits are a premium feature. Picking one on a server without premium is refused rather than quietly ignored."
+            : "This is how long the bot waits before saying a service is ready. It does not change the listing service's own cooldown."
+        }
       />
     );
   }

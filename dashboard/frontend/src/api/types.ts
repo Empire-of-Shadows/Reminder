@@ -26,9 +26,21 @@ export interface Guild extends EngineGuild {
   panel_role: PanelRole;
 }
 
+/** One cooldown a bump bot offers, exactly as the in-Discord panel offers it. */
+export interface BumpBotChoice {
+  label: string;
+  seconds: number;
+  /** Only selectable while the server has premium. */
+  premium: boolean;
+}
+
 export interface BumpBot {
   key: string;
   name: string;
+  /** The cooldown used when a server has not chosen one. */
+  default_cooldown?: number;
+  /** Empty or one-item lists mean there is nothing to choose here. */
+  choices?: BumpBotChoice[];
 }
 
 /** Per-guild bump configuration (mirrors the dashboard settings API).
@@ -36,6 +48,9 @@ export interface BumpBot {
 export interface PanelRolesConfig {
   admin_role_ids: string[];
 }
+
+/** Per-bot cooldown overrides, in seconds, keyed by bump-bot key. */
+export type BotDelayConfig = Record<string, number>;
 
 export interface GuildSettings {
   guild_id?: string;
@@ -46,6 +61,7 @@ export interface GuildSettings {
   timers_message: boolean;
   custom_message: string;
   roles?: PanelRolesConfig;
+  bot_delay?: BotDelayConfig;
   panel_role?: PanelRole;
   [key: string]: unknown;
 }
@@ -60,6 +76,7 @@ export interface SettingsPatch {
   timers_message?: boolean;
   custom_message?: string;
   roles?: PanelRolesConfig;
+  bot_delay?: BotDelayConfig;
 }
 
 /** One bump bot's live status within a guild. Unix timestamps in seconds. */
@@ -87,6 +104,16 @@ export interface DeleteUserDataResponse {
   user_id: string;
   guild_id: string | null;
   deleted: Record<string, number>;
+}
+
+/** How many records name the signed-in user, in the selected scope.
+ *  A null count means that collection could not be read - render it as
+ *  "could not be counted", never as zero. */
+export interface UserDataSummary {
+  user_id: string;
+  guild_id: string | null;
+  audit_log_entries: number | null;
+  premium_entitlements: number | null;
 }
 
 export interface GuildBumpStats {
@@ -176,4 +203,83 @@ export interface GuildOverview {
   setup: SetupOverview | null;
   premium: PremiumOverview | null;
   changes: ChangesOverview | null;
+}
+
+// ── Member tier (GET /api/guilds/{id}/member/*) ───────────────────────────
+//
+// What the server's bump reminder is doing FOR YOU. Fetched additively by the
+// dashboard home: each one can fail on its own without costing the others, so
+// every consumer treats a missing section as absent, not as empty.
+
+/** Whether the signed-in member is one of the people the reminder pings. */
+export interface MemberReminder {
+  reminder_role_set: boolean;
+  bump_channel_set: boolean;
+  bots_tracked: number;
+  /** null means "we could not confirm" - the roles lookup came back empty, and
+   *  an empty answer cannot be told apart from a failed one. Never render it
+   *  as "no". */
+  you_will_be_pinged: boolean | null;
+  status: "yes" | "no" | "no_role" | "unknown";
+}
+
+/** A bump bot whose cooldown premium can shorten in this server. */
+export interface FasterCooldown {
+  key: string;
+  name: string;
+  standard_cooldown: number;
+  premium_cooldown: number;
+  /** True only when premium is live AND this server picked the shorter time. */
+  active: boolean;
+}
+
+export interface MemberCommand {
+  name: string;
+  detail: string;
+}
+
+/** What a member of this server can actually use. Premium here is a property of
+ *  the SERVER, not of the person reading the page. */
+export interface MemberEntitlements {
+  is_premium: boolean;
+  tier: string | null;
+  expires_at: string | null;
+  custom_wording: {
+    available: boolean;
+    written: boolean;
+    in_use: boolean;
+  };
+  faster_cooldowns: FasterCooldown[];
+  commands: MemberCommand[];
+}
+
+// ── Audit log (GET /api/guilds/{id}/audit-log) ────────────────────────────
+
+/** One change, folded out of the three shapes the collection actually holds. */
+export interface AuditLogRow {
+  at: string | null;
+  actor: string | null;
+  actor_id: string | null;
+  source: string;
+  section: string;
+  key: string;
+  action: string;
+  old_value: unknown;
+  new_value: unknown;
+  redacted: boolean;
+}
+
+export interface AuditLogSummary {
+  total: number;
+  window_days: number;
+  total_window: number;
+  newest: string | null;
+}
+
+export interface AuditLogPage {
+  entries: AuditLogRow[];
+  /** ISO timestamp to pass as `before` for the next page; null at the end. */
+  next_cursor: string | null;
+  /** First page only, and null when the counts themselves failed. */
+  summary?: AuditLogSummary | null;
 }
