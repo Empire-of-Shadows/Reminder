@@ -358,8 +358,8 @@ PREMIUM_CONFIG = PanelNode(
     kind="menu",
     category_group="feature",
     description=(
-        "Premium features for this server. Open **Premium Status** for the live "
-        "state, or use `/premium status`."
+        "Premium features for this server. See **Premium Status** or "
+        "`/premium status` for the live state."
     ),
     children={
         "status": info_action(
@@ -385,8 +385,8 @@ PREMIUM_CONFIG = PanelNode(
 ACCESS_ROLES_CONFIG = panel_roles_pair(
     admin_key="panel_access_roles",
     admin_description=(
-        "Roles that may open `/admin panel` and the web dashboard without Manage "
-        "Server. Members with **Manage Server** always have access."
+        "Roles that may open `/admin panel` and the dashboard; Manage Server "
+        "always has access."
     ),
     str_ids=True,
 )["panel_access_roles"]
