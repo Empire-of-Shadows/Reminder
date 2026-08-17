@@ -1,5 +1,5 @@
 """
-ImperialReminder Discord bot — main orchestrator.
+ImperialReminder Discord bot - main orchestrator.
 
 Unified startup sequence (mirrors Ecom / TheHost / TheCodex):
     1. Load env from docker/.env (with root .env fallback)
@@ -68,7 +68,7 @@ async def on_ready():
     if getattr(bot, "_init_done", False):
         try:
             await bot.change_presence(status=discord.Status.online)
-            logger.info("🔁 Reconnect detected — presence refreshed, init skipped.")
+            logger.info("🔁 Reconnect detected - presence refreshed, init skipped.")
         except Exception as e:
             logger.error(f"❌ Error refreshing presence on reconnect: {e}")
         return

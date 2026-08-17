@@ -42,7 +42,7 @@ if not SECRET_KEY:
 SESSION_COOKIE_NAME = os.getenv("SESSION_COOKIE_NAME", "eos_session")
 SESSION_MAX_AGE_DAYS = int(os.getenv("SESSION_MAX_AGE_DAYS", "30"))
 
-# Cookie domain — set to ".eosofficial.club" in production for cross-subdomain SSO
+# Cookie domain - set to ".eosofficial.club" in production for cross-subdomain SSO
 COOKIE_DOMAIN = os.getenv("COOKIE_DOMAIN") or None
 IS_PRODUCTION = os.getenv("ENVIRONMENT", "development").lower() == "production"
 
@@ -50,7 +50,7 @@ IS_PRODUCTION = os.getenv("ENVIRONMENT", "development").lower() == "production"
 HOST = os.getenv("DASHBOARD_HOST", "0.0.0.0")
 PORT = int(os.getenv("DASHBOARD_PORT", "54014"))
 
-# CORS — filter falsy entries so an unset BASE_URL doesn't leak an empty origin.
+# CORS - filter falsy entries so an unset BASE_URL doesn't leak an empty origin.
 # Dev origins (Vite/localhost) are gated out of production: with
 # allow_credentials=True a stray localhost page must never be a valid origin.
 _DEV_CORS_ORIGINS = [

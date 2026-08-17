@@ -12,7 +12,7 @@ class StartUp(commands.Cog):
     @commands.Cog.listener()
     async def on_ready(self):
         # Fires on reconnects. On first boot this cog is loaded *inside* the
-        # main on_ready handler, so this listener misses that dispatch — the
+        # main on_ready handler, so this listener misses that dispatch - the
         # entry point calls reschedule_all_guilds() directly for boot.
         await self.reschedule_all_guilds()
 
