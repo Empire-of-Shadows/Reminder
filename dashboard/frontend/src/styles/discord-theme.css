@@ -155,61 +155,22 @@ a:focus-visible {
 
 /* ── Buttons ────────────────────────────────────────────────────────── */
 
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 8px 16px;
-  border-radius: var(--radius-sm);
-  border: none;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  color: white;
-  text-decoration: none;
-  gap: 6px;
-}
-
-.btn:hover {
-  transform: translateY(-1px);
-  filter: saturate(110%);
-}
-
-.btn:active {
-  transform: translateY(0);
-}
-
-.btn-primary {
-  background: var(--brand-gradient);
-  box-shadow: 0 2px 12px rgba(77, 14, 179, 0.3);
-}
-.btn-primary:hover {
-  box-shadow: 0 4px 18px rgba(77, 14, 179, 0.45);
-}
-
-.btn-secondary {
-  background: var(--glass-heavy);
-  color: var(--text-2);
-  border: 1px solid var(--border-subtle);
-}
-.btn-secondary:hover {
-  background: rgba(255, 255, 255, 0.12);
-}
-
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  transform: none;
-  filter: none;
-}
+/* Owned by the ENGINE (_engine/styles/eos-layout.css), which loads before this
+   file: .btn, .btn-primary, .btn-secondary, .btn-danger and their hover and
+   disabled states. This sheet used to redeclare them with the same values
+   spelled as raw numbers instead of tokens - equal specificity, later in the
+   cascade, so the bot copy silently won and an engine-side button change would
+   have done nothing here. Removed 2026-08-17 after checking every declaration
+   resolved identically. What stays below is only what this bot adds. */
 
 .btn.ghost {
   background: transparent;
   color: var(--text-2);
   border: 1px solid rgba(255, 255, 255, 0.12);
 }
-.btn.ghost:hover {
+/* `:not(:disabled)` is required - see the engine's buttons note in
+   _engine/styles/eos-layout.css. A disabled <button> still matches :hover. */
+.btn.ghost:hover:not(:disabled) {
   color: var(--text-1);
   border-color: var(--brand-light);
   box-shadow: none;
@@ -363,13 +324,9 @@ a:focus-visible {
   color: var(--success);
 }
 
-.empty-state {
-  background: var(--eos-bg-card, #1f1b2e);
-  border: 1px dashed rgba(255, 255, 255, 0.12);
-  border-radius: 14px;
-  color: var(--eos-fg-2, #b8b3c8);
-  text-align: center;
-}
+/* .empty-state is owned by the engine (eos-layout.css) - the copy that used to
+   sit here resolved to the same five declarations. Removed 2026-08-17. The
+   .bump-stats .empty-state override further down is bot-owned and stays. */
 
 /* ── Loading skeleton ───────────────────────────────────────────────── */
 
@@ -862,10 +819,14 @@ a:focus-visible {
 
 /* ── Destructive button + confirmation dialog ───────────────────────── */
 
-.btn-danger {
-  background: var(--danger);
-}
-.btn-danger:hover {
+/* The engine owns .btn-danger's fill and its hover shadow. The one thing this
+   bot adds is a brighter hover: the engine's .btn:hover only saturates, and on
+   a destructive button that reads as too subtle. Overriding `filter` here
+   replaces that rule rather than adding to it, which is intended.
+   `:not(:disabled)` is required - see the engine's buttons note. Without it a
+   disabled Delete button brightened under the pointer, which on a destructive
+   control is exactly the wrong signal. */
+.btn-danger:hover:not(:disabled) {
   filter: brightness(1.1) saturate(110%);
 }
 

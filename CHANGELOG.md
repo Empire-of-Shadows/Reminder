@@ -3,6 +3,13 @@
 All notable, community-facing changes to ImperialReminder are recorded here in plain language.
 For the technical, commit-level history, see git.
 
+## [Unreleased] - 2026-08-17
+
+### Fixed
+- **Buttons that are switched off no longer light up when you point at them.** A greyed-out
+  button on the dashboard still glowed as though you could press it, which made it look
+  available when it was not. It now stays quiet until it is actually usable.
+
 ## [Unreleased] - 2026-08-15
 
 ### Changed
