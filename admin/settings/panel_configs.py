@@ -16,7 +16,7 @@ Roles form the "main" cluster, with Bump Bots / Messages / Premium below the
 "Feature Configurations" divider.
 
 The panel is admin-only: ``bindings.resolve_panel_role`` never returns "mod", so no
-node here declares ``mod_allowed``.
+the engine's ``mod_allowed`` node flag was removed fleet-wide on 2026-08-06.
 """
 
 import discord

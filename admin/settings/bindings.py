@@ -41,8 +41,10 @@ BOT_NAME = "Imperial Reminder"
 ROLE_ACCESS_PATH = "Panel Access Roles"
 
 # The panel is admin-only: there is no Mod tier. resolve_panel_role below collapses
-# anything that is not "admin" to "none", so neither per-node `PanelNode.mod_allowed`
-# flags nor the legacy `MOD_ALLOWED_CATEGORIES` fallback are used by this bot.
+# anything that is not "admin" to "none". The engine's mod machinery
+# (`PanelNode.mod_allowed`, the `MOD_ALLOWED_CATEGORIES` fallback) was REMOVED
+# fleet-wide on 2026-08-06 - those names no longer exist anywhere, so do not go
+# looking for them.
 
 # OVERVIEW_FOOTER / SETUP_GUIDE_TEXT are re-exported from panel_branding above.
 
