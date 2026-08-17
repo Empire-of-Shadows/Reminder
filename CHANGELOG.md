@@ -5,7 +5,19 @@ For the technical, commit-level history, see git.
 
 ## [Unreleased] - 2026-08-15
 
+### Changed
+- **What people say in the bump channel no longer goes into our logs.** Every message posted in a
+  server's bump channel had its full text written to the bot's running log, including ordinary
+  conversation that had nothing to do with bumping. The log now records only that a message was
+  checked and whether it came from a bump bot. The wording itself is kept only when detailed
+  troubleshooting is switched on deliberately.
+
 ### Fixed
+- **Reminders work in servers invited from the website.** The invite link the dashboard builds was
+  missing permission to read message history, which the bot needs to re-read a bump message after
+  a bump bot edits it and to tidy up its own old timer messages. In a server added that way,
+  detection could fail silently and no reminder would ever arrive. Servers already invited are
+  unaffected.
 - **The admin panel no longer fails to open a menu when a summary line gets long.** If a
   dropdown entry's summary grew past what Discord allows - for example a setting listing
   many roles or channels - the whole screen failed with an error instead of showing. Long summaries now switch to a

@@ -83,6 +83,57 @@ class TimerEmbedManager(commands.Cog):
         except Exception as e:
             logger.error(f"[{guild_id}] Error scheduling embed update: {e}", exc_info=True)
 
+    @staticmethod
+    def _resolve_timer_channel(config, fallback_channel_id: int) -> int:
+        """Where the countdown embed belongs.
+
+        The panel offers a Timers Channel described as "Channel where the live
+        countdown timer embed is shown. Defaults to the Bump Channel." Both the
+        panel and the dashboard wrote it and nothing ever read it, so the embed
+        always landed in the bump channel and the setting did nothing. Unset
+        (0/None) keeps the documented default, which is the channel the caller
+        passed - the bump channel.
+        """
+        raw = getattr(config, "timers_channel", 0)
+        try:
+            configured = int(raw or 0)
+        except (TypeError, ValueError):
+            logger.warning(f"Unparseable timers_channel {raw!r}; using the bump channel")
+            return fallback_channel_id
+        return configured or fallback_channel_id
+
+    async def _clear_stale_embeds(self, guild_id: int, config, keep_channel_id: int) -> None:
+        """Remove a countdown embed left behind in a channel we no longer use.
+
+        The stored message id is keyed per channel, so moving the Timers Channel
+        would otherwise strand a frozen countdown in the old one forever.
+        """
+        stale_keys = [
+            key for key in (config.extra_data or {})
+            if key.startswith("timer_message_") and key != f"timer_message_{keep_channel_id}"
+        ]
+        for key in stale_keys:
+            message_id = config.extra_data.get(key)
+            if not message_id:
+                continue
+            try:
+                old_channel_id = int(key.rsplit("_", 1)[1])
+            except (IndexError, ValueError):
+                continue
+            try:
+                old_channel = self.bot.get_channel(old_channel_id)
+                if old_channel is not None:
+                    old_message = await old_channel.fetch_message(int(message_id))
+                    await old_message.delete()
+                    logger.info(
+                        f"[{guild_id}] Removed stale timer embed from channel {old_channel_id}"
+                    )
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException,
+                    ValueError, TypeError) as e:
+                logger.debug(f"[{guild_id}] Could not remove stale timer embed: {e}")
+            # Forget it either way - a message we cannot reach is not ours to track.
+            await self.bot.guild_config_manager.set_value(guild_id, key, None)
+
     async def _delayed_update(
         self,
         guild_id: int,
@@ -99,6 +150,11 @@ class TimerEmbedManager(commands.Cog):
             if not config.timers_message:
                 logger.debug(f"[{guild_id}] Timer messages disabled, skipping update")
                 return
+
+            # Resolved here rather than at schedule time so an admin changing the
+            # setting during the debounce window still gets the new channel.
+            channel_id = self._resolve_timer_channel(config, channel_id)
+            await self._clear_stale_embeds(guild_id, config, channel_id)
 
             channel = self.bot.get_channel(channel_id)
             if not channel:

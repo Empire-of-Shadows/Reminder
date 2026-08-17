@@ -10,7 +10,7 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](https://docs.docker.com/compose/)
 
-Tracks successful server bumps across every major listing platform and sends timely reminders the moment each cooldown expires — so your server stays visible without anyone watching the clock.
+Tracks successful server bumps across every major listing platform and sends timely reminders the moment each cooldown expires - so your server stays visible without anyone watching the clock.
 
 </div>
 
@@ -24,10 +24,10 @@ Detects and tracks successful bumps across all major Discord server listing serv
 
 | Platform | Default Cooldown | Premium Cooldown |
 |---|---|---|
-| **Disboard** | 2 hours | — |
-| **BumpIt** | 1 hour | — |
-| **Bump4You** | 2 hours | — |
-| **WeBump** | 2 hours | — |
+| **Disboard** | 2 hours | - |
+| **BumpIt** | 1 hour | - |
+| **Bump4You** | 2 hours | - |
+| **WeBump** | 2 hours | - |
 | **OneBump** | 2 hours | 30 minutes |
 
 ### 🔔 Smart Reminders
@@ -38,7 +38,7 @@ Detects and tracks successful bumps across all major Discord server listing serv
 
 ### 🧠 Intelligent Detection
 
-The bot uses a **four-layer detection system** to catch bump success messages reliably — Discord's event delivery is inconsistent for webhook messages:
+The bot uses a **four-layer detection system** to catch bump success messages reliably - Discord's event delivery is inconsistent for webhook messages:
 
 1. Real-time `on_message` monitoring
 2. Message edit tracking (`on_message_edit`) for async embed population
@@ -63,7 +63,7 @@ The bot uses a **four-layer detection system** to catch bump success messages re
 - Premium activation via the admin panel
 
 ### ⚙️ Admin Panel
-> `/admin panel` — unified guild configuration (Discord Components v2). Sections: **Core Setup** (bump channel, bump role, timers channel), **Bump Bots** (which platforms to track and their cooldowns), **Messages** (custom reminder text and live timer toggle), **Premium** (activation and webhook config).
+> `/admin panel` - unified guild configuration (Discord Components v2). Sections: **Core Setup** (bump channel, bump role, timers channel), **Bump Bots** (which platforms to track and their cooldowns), **Messages** (custom reminder text and live timer toggle), **Premium** (activation and webhook config).
 
 ---
 

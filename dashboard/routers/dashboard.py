@@ -35,8 +35,13 @@ router = APIRouter(tags=["dashboard"])
 _CONFIG_COLLECTION = "settings_guild_data"
 _ADMIN_PROBE_LIMIT = 25
 
-# Bot invite permissions: View Channels + Send Messages + Embed Links + Mention Everyone.
-_INVITE_PERMISSIONS = 0x400 | 0x800 | 0x4000 | 0x20000  # 150528
+# Bot invite permissions: View Channels + Send Messages + Embed Links +
+# Read Message History + Mention Everyone.
+# Read Message History is not optional: bump detection refetches a WeBump message
+# after it is edited, falls back to a refetch on an empty payload, and cleans up
+# stale timer embeds. Without it all three fail quietly, so a server invited from
+# here would just never get reminders.
+_INVITE_PERMISSIONS = 0x400 | 0x800 | 0x4000 | 0x10000 | 0x20000  # 215040
 
 
 def _has_manage(guild: dict) -> bool:

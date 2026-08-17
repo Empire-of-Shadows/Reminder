@@ -19,7 +19,7 @@ from startup.presence import PresenceRotator
 POOLS = {
     "playing": [
         "hide and seek with /bump",
-        "tag—you're bumped!",
+        "tag - you're bumped!",
         "90% uptime simulator",
         "with the bots code",
     ],

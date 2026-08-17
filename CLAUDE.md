@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Imperial Reminder** is a Discord bot that tracks and reminds users when it's time to bump their server on Discord server-listing services (Disboard, BumpIt, Bump4You, WeBump, OneBump). It monitors bump success messages, schedules reminders based on cooldown periods, and manages guild-specific configuration in MongoDB. A FastAPI web dashboard lets server admins configure the bot via Discord OAuth.
+**Imperial Reminder** is a Discord bot that tracks and reminds users when it's time to bump their server on Discord server-listing services (Disboard, BumpIt, Bump4You, WeBump, OneBump, Unfocused). It monitors bump success messages, schedules reminders based on cooldown periods, and manages guild-specific configuration in MongoDB. A FastAPI web dashboard lets server admins configure the bot via Discord OAuth.
 
 ImperialReminder is fully aligned with the **shared Empire of Shadows engine architecture** (same standard as TheDecree, TheCodex, and Stygian-Relay): all four shared engines are vendored and drift-gated, with thin bot-owned seams. See the monorepo-root `../../CLAUDE.md` for the ecosystem-wide rules; this file wins on local details.
 
@@ -123,12 +123,13 @@ Configured in `storage/sub_systems/bump_config.py`:
 | Bump4You | 1089935069927456849 | 2 hours | - |
 | WeBump | 1154077045903593555 | 2 hours | - |
 | OneBump | 1028956609382199346 | 2 hours | 30 minutes |
+| Unfocused | 835255643157168168 | 2 hours | 90 minutes |
 
 ## Common Development Tasks
 
 - **Add a cog**: drop a file with `async def setup(bot)` into `commands/`, `admin/`, or `Features/`. Managers come from `bot.<name>` - never re-instantiate.
 - **Add a bump bot**: extend `BUMP_BOTS_INFO`, `BUMP_BOTS`, `DEFAULT_GUILD_CONFIG` delays/timestamps, `SUCCESS_KEYWORDS`, `BUMP_BOTS_CHOICES` in `sub_systems/bump_config.py`.
-- **Schema changes**: additive `GuildConfig` fields need no migration (`from_dict` fills defaults). Guild config + bump timestamps are LIVE production data - migrate, never drop. Removing a field ships an idempotent script under `migrations/scripts/` (`_common.py` is the harness: dry run by default, `--apply` to write a backup then `$unset`, `--rollback <file>` to replay it). Run the dry run, read its report, then apply.
+- **Schema changes**: additive `GuildConfig` fields need no migration (`from_dict` fills defaults). Guild config + bump timestamps are LIVE production data - migrate, never drop. Removing a field ships an idempotent script under `../../TestsAndMigrations/ImperialReminder/migrations/scripts/` (the tree moved out of this repo on 2026-08-08; `_common.py` is the harness: dry run by default, `--apply` to write a backup then `$unset`, `--rollback <file>` to replay it). Run them from `TestsAndMigrations/ImperialReminder/` as `python -m migrations.scripts.<name>`. Run the dry run, read its report, then apply.
 - **Engine changes**: edit the master in `EmpireSystems/`, re-run the sync tool with `--bot reminder`, verify `--check`.
 - **Debugging detection**: watch `[on_message]` / `[on_message_edit]` / `[extract_all_text]` log lines.
 

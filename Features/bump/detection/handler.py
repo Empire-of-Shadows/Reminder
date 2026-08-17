@@ -190,10 +190,16 @@ class BumpHandler(commands.Cog):
 
         # Try to grab all text (embeds + content + components); if nothing found, refetch once
         text = await self.extract_all_text(message, allow_refetch=True)
+        # Members chat in the bump channel too, so their words never go to the
+        # production log. INFO records that a message was examined and how it
+        # resolved; the text itself is DEBUG-only, which is where the detection
+        # debugging workflow already lives.
         logger.info(
             f"[on_message] Guild={message.guild.id} Channel={message.channel.id} "
-            f"Author={message.author.id} WebhookID={getattr(message, 'webhook_id', None)} Text='{text}'"
+            f"Author={message.author.id} WebhookID={getattr(message, 'webhook_id', None)} "
+            f"BumpBot={bot_info[0] if bot_info else None} TextLen={len(text)}"
         )
+        logger.debug(f"[on_message] Extracted text for {message.id}: '{text}'")
 
         if bot_info:
             bot_name, delay = bot_info
@@ -231,10 +237,13 @@ class BumpHandler(commands.Cog):
 
         after_text = await self.extract_all_text(after, allow_refetch=False)
 
+        # Same rule as on_message: no member text at INFO.
         logger.info(
             f"[on_message_edit] Guild={after.guild.id} Channel={after.channel.id} Author={after.author.id} "
-            f"WebhookID={getattr(after, 'webhook_id', None)} Text='{after_text}'"
+            f"WebhookID={getattr(after, 'webhook_id', None)} "
+            f"BumpBot={bot_info[0] if bot_info else None} TextLen={len(after_text)}"
         )
+        logger.debug(f"[on_message_edit] Extracted text for {after.id}: '{after_text}'")
 
         if bot_info:
             bot_name, delay = bot_info
