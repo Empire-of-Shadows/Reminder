@@ -3,6 +3,22 @@
 All notable, community-facing changes to ImperialReminder are recorded here in plain language.
 For the technical, commit-level history, see git.
 
+## [Unreleased] - 2026-08-19 (where premium is explained)
+
+### Fixed
+- **Pressing Escape no longer closes a confirmation box while the action is already running.**
+  When you confirm something destructive, the Cancel button greys out and clicking outside the
+  box does nothing, because by then there is nothing left to call off. Escape ignored that and
+  closed the box anyway, so the action carried on out of sight and it looked like you had
+  stopped it. Escape now behaves like the other two, and still closes the box normally before
+  you confirm.
+
+### Changed
+- **The Premium page in `/help` is now shown to server admins rather than everyone.** Premium
+  applies to a whole server and is arranged by whoever runs it, so its write-up sits with the
+  admin pages now. Nothing about the `/premium status` command has changed - anyone can still
+  run it, and the answer is still only visible to the person who ran it.
+
 ## [Unreleased] - 2026-08-17 (bump reminder check)
 
 ### Fixed

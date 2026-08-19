@@ -106,7 +106,12 @@ PREMIUM = HelpCategory(
     emoji="\N{GEM STONE}",
     accent=discord.Color.gold().value,
     thumbnail=None,
-    admin_only=False,
+    # Admin-only by owner ruling 2026-08-19: premium is a server-owner concern, so
+    # every bot documents it on an admin surface. This is a DISPLAY gate on the help
+    # page only - `/premium status` itself carries no permission check on any bot and
+    # any member can still run it. Relay reaches the same place by keeping its premium
+    # block inside its Admin category rather than having a category of its own.
+    admin_only=True,
     blurb="Optional extras for a server, not for individual members.",
     body=(
         "**`/premium status`**\n"
