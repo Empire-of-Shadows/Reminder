@@ -72,15 +72,20 @@ async def member_bumps(guild_id: int, _session: dict = Depends(require_guild_mem
 async def member_reminder(guild_id: int, session: dict = Depends(require_guild_member)):
     """Whether this member is one of the people the bump reminder pings.
 
-    ``you_will_be_pinged`` is deliberately three-valued. The engine's
-    ``member_role_ids`` returns an empty set both for "this member holds no
-    roles" and for "Discord did not answer", and the two cannot be told apart
-    from here - so an empty answer becomes ``null`` ("we could not confirm")
-    rather than a confident "no". Saying "you will not be pinged" to somebody
-    who actually holds the role is the one wrong answer this endpoint could
-    give, and it is the one that would make them miss a bump.
+    ``you_will_be_pinged`` is deliberately three-valued. Saying "you will not be
+    pinged" to somebody who actually holds the role is the one wrong answer this
+    endpoint could give, and it is the one that would make them miss a bump, so
+    "we could not confirm" is ``null`` rather than a confident "no".
+
+    Updated 2026-08-17: the engine can now tell the two apart. ``member_role_ids``
+    returned an empty set both for "holds no roles" and for "Discord did not
+    answer", so this endpoint treated ANY empty answer as unknown - correct in
+    the dangerous direction, but it also refused to answer for a member who
+    genuinely holds no roles, which is a question we could always have answered.
+    ``member_roles_lookup`` carries ``resolved``, so unknown now means only what
+    it says.
     """
-    from dashboard._engine.auth.panel_access import member_role_ids
+    from dashboard._engine.auth.panel_access import member_roles_lookup
 
     gcm = await get_guild_config_manager(db_manager)
     config = await gcm.get_config(guild_id)
@@ -109,14 +114,16 @@ async def member_reminder(guild_id: int, session: dict = Depends(require_guild_m
         }
 
     try:
-        held = await member_role_ids(str(guild_id), str(user_id))
+        lookup = await member_roles_lookup(str(guild_id), str(user_id))
     except Exception:
         logger.warning(
             "member role lookup failed for %s in guild %s", user_id, guild_id, exc_info=True
         )
-        held = frozenset()
+        lookup = None
 
-    if not held:
+    # Only an unanswered lookup is unknown. A resolved one that came back empty is a
+    # real answer: this member holds no roles, so they are not being pinged.
+    if lookup is None or not lookup.resolved:
         return {
             "reminder_role_set": True,
             "bump_channel_set": watching,
@@ -124,6 +131,7 @@ async def member_reminder(guild_id: int, session: dict = Depends(require_guild_m
             "you_will_be_pinged": None,
             "status": "unknown",
         }
+    held = lookup.roles
 
     pinged = str(config.bump_role) in held
     return {

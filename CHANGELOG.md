@@ -3,6 +3,31 @@
 All notable, community-facing changes to ImperialReminder are recorded here in plain language.
 For the technical, commit-level history, see git.
 
+## [Unreleased] - 2026-08-17 (bump reminder check)
+
+### Fixed
+- **The page now tells you straight when you are not on the bump reminder list.** If you held no
+  roles at all, the check said "we could not confirm" rather than simply "no" - it could not tell
+  the difference between having no roles and not being able to reach Discord. It can now, so you
+  get a real answer, and "we could not confirm" appears only when that is genuinely the case.
+
+## [Unreleased] - 2026-08-17 (dashboard charts and sign-in)
+
+### Fixed
+- **Dates under the bar charts no longer overlap.** On a narrow screen, or when a chart covered a
+  lot of days, the labels along the bottom could print on top of one another and become
+  unreadable. The chart now shows as many labels as genuinely fit the space, and always keeps the
+  first and the last so you can see the range at a glance.
+- **A brief Discord outage no longer keeps you locked out of the dashboard for a full minute.**
+  When Discord could not be reached to confirm your roles, the dashboard remembered that failure
+  for 60 seconds, so you stayed shut out even after Discord had come back. It now tries again
+  within about 10 seconds.
+- **The same applies to a server admin.** The check that confirms you manage this server had the
+  same problem and it locked out harder: one failed reply shut every admin of that server out for
+  a full minute. It now retries after about ten seconds.
+- **The dashboard no longer creeps up in memory the longer it runs.** Two internal lookup caches
+  never cleared out entries that had gone stale.
+
 ## [Unreleased] - 2026-08-17
 
 ### Fixed
