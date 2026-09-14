@@ -50,7 +50,7 @@ class SetupGatekeeper:
         """Guard a slash command behind completed setup.
 
         Currently unused: this bot has no user-facing commands to guard (its only
-        commands are /admin panel and the portable premium package). Kept wired and
+        commands are /admin panel and /help). Kept wired and
         correct so the first command that needs gating can just call it, and so its
         wording cannot drift from the nudge the bump handler sends.
         """

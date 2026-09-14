@@ -4,6 +4,7 @@ import discord
 from discord.ext import commands
 
 from storage.log import get_logger
+from storage.sub_systems.bump_config import BOT_DISPLAY_NAMES
 
 logger = get_logger("TimerEmbedManager")
 
@@ -33,7 +34,7 @@ class TimerEmbedManager(commands.Cog):
             active_text = []
             for bot_name, end_timestamp in sorted(active_timers, key=lambda x: x[1]):
                 active_text.append(
-                    f"**{bot_name.capitalize()}**: <t:{end_timestamp}:R>"
+                    f"**{BOT_DISPLAY_NAMES.get(bot_name, bot_name.capitalize())}**: <t:{end_timestamp}:R>"
                 )
             embed.add_field(
                 name="⏰ Active Timers",
@@ -45,7 +46,9 @@ class TimerEmbedManager(commands.Cog):
         if expired_timers:
             expired_text = []
             for bot_name in expired_timers:
-                expired_text.append(f"**{bot_name.capitalize()}**: Ready to bump!")
+                expired_text.append(
+                    f"**{BOT_DISPLAY_NAMES.get(bot_name, bot_name.capitalize())}**: Ready to bump!"
+                )
             embed.add_field(
                 name="✅ Ready to Bump",
                 value="\n".join(expired_text),
@@ -204,8 +207,12 @@ class TimerEmbedManager(commands.Cog):
         except Exception as e:
             logger.error(f"[{guild_id}] Error updating timer embed: {e}", exc_info=True)
         finally:
+            # Only forget this task's own slot: a debounced (cancelled) update
+            # finishes after its replacement is stored under the same guild, and
+            # popping that would let the next bump skip cancelling it.
             async with self._update_lock:
-                self._pending_updates.pop(guild_id, None)
+                if self._pending_updates.get(guild_id) is asyncio.current_task():
+                    self._pending_updates.pop(guild_id, None)
 
 
 async def setup(bot):

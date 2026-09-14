@@ -205,7 +205,10 @@ function SetupHealth({ guildId, setup }: { guildId: string; setup: SetupOverview
       <div>
         <KeyValue k="Bump channel" v={setLabel(setup.bump_channel)} />
         <KeyValue k="Reminder role" v={setLabel(setup.bump_role)} />
-        <KeyValue k="Timers channel" v={setLabel(setup.timers_channel)} />
+        <KeyValue
+          k="Timers channel"
+          v={setup.timers_channel ? "Set" : setup.bump_channel ? "Bump channel" : "Not set"}
+        />
         <KeyValue k="Live countdown" v={setup.timers_message ? "On" : "Off"} />
       </div>
       <p className="ov-muted">

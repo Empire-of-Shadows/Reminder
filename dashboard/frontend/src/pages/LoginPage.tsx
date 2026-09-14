@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { fetchPublicStats, type PublicStats } from "../api/client";
+import { Link, useSearchParams } from "react-router-dom";
+import { fetchPublicStats, signInUrl, type PublicStats } from "../api/client";
 
 function formatCount(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
@@ -10,6 +10,9 @@ function formatCount(n: number): string {
 
 export default function LoginPage() {
   const [stats, setStats] = useState<PublicStats | null>(null);
+  // The 401 handler sends visitors here with ?next=<the page they were on>.
+  const [searchParams] = useSearchParams();
+  const loginHref = signInUrl(searchParams.get("next"));
 
   useEffect(() => {
     let alive = true;
@@ -30,7 +33,7 @@ export default function LoginPage() {
           Sign in with Discord to manage your server's bump reminders. Your Empire of Shadows
           session is shared - one login covers every bot dashboard.
         </p>
-        <a href="/auth/discord" className="cta">
+        <a href={loginHref} className="cta">
           Login with Discord
         </a>
         <p className="muted" style={{ marginTop: "0.75rem", fontSize: "0.85rem" }}>

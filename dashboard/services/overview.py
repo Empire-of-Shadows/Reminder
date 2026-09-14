@@ -172,6 +172,7 @@ def build_setup(config: GuildConfig) -> dict:
     message = config.custom_message or ""
 
     return {
+        "custom_message_pings": (not message.strip()) or "{bump_role}" in message,
         "bump_channel": str(config.bump_channel) if config.bump_channel else "",
         "bump_role": str(config.bump_role) if config.bump_role else "",
         "timers_channel": str(config.timers_channel) if config.timers_channel else "",
@@ -331,19 +332,26 @@ def build_features(
                      "detail": detail, "settings_key": "bumps"})
 
     # -- Live countdown ------------------------------------------------------
+    # An unset timers channel is the default, not a gap: the countdown goes to the
+    # bump channel (Features/bump/display/embed_manager._resolve_timer_channel).
     if not config.timers_message:
         state, detail = "off", "Turned off"
-    elif not config.timers_channel:
-        state, detail = "needs_setup", "No timers channel set"
-    else:
+    elif config.timers_channel:
         state, detail = "on", "Keeping a countdown message up to date"
+    elif config.bump_channel:
+        state, detail = "on", "Keeping a countdown message up to date in the bump channel"
+    else:
+        state, detail = "needs_setup", "No bump channel to post it in"
     features.append({"key": "timers", "label": "Live countdown", "state": state,
                      "detail": detail, "settings_key": "timers"})
 
     # -- Custom message ------------------------------------------------------
     has_message = bool((setup or {}).get("custom_message_set")) if setup is not None \
         else bool((config.custom_message or "").strip())
-    if has_message:
+    message_text = config.custom_message or ""
+    if has_message and "{bump_role}" not in message_text:
+        state, detail = "on", "Sending your own wording - it pings nobody"
+    elif has_message:
         state, detail = "on", "Sending your own wording"
     else:
         state, detail = "off", "Sending the standard reminder"

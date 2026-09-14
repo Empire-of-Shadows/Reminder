@@ -67,7 +67,13 @@ async def on_ready():
     """
     if getattr(bot, "_init_done", False):
         try:
-            await bot.change_presence(status=discord.Status.online)
+            # Discord drops presence on a new session. Restore the rotation's Idle
+            # status and its last activity; a bare update would show Online with none.
+            idle = getattr(bot, "idle_manager", None)
+            if idle is not None:
+                await idle.restore_presence()
+            else:
+                await bot.change_presence(status=discord.Status.idle)
             logger.info("🔁 Reconnect detected - presence refreshed, init skipped.")
         except Exception as e:
             logger.error(f"❌ Error refreshing presence on reconnect: {e}")

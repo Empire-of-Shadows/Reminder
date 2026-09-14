@@ -64,7 +64,7 @@ export default function MemberBumpView({ view }: { view: MyBumpView | null }) {
     return <NothingHereForYou configured={view.configured} />;
   }
 
-  return <BumpTimers timers={view.timers} serverTime={view.server_time} />;
+  return <BumpTimers timers={view.timers} serverTime={view.server_time} pingsOn={view.pings_on} />;
 }
 
 /* ── Holds the role: the countdowns ────────────────────────────────────── */
@@ -72,9 +72,11 @@ export default function MemberBumpView({ view }: { view: MyBumpView | null }) {
 function BumpTimers({
   timers,
   serverTime,
+  pingsOn,
 }: {
   timers: MyBumpTimer[] | null;
   serverTime: number;
+  pingsOn: boolean;
 }) {
   // Countdowns tick against the SERVER's clock, not the browser's: the offset
   // is measured once on mount, exactly as BumpStatusGrid does it, so a skewed
@@ -137,8 +139,9 @@ function BumpTimers({
         }
       >
         <p className="ov-body">
-          You hold this server's bump reminder role, so the bot mentions you when a bump
-          comes off cooldown. Here is where each listing service stands.
+          {pingsOn
+            ? "You hold this server's bump reminder role, so the bot mentions you when a bump comes off cooldown. Here is where each listing service stands."
+            : "You hold this server's bump reminder role. Its reminder message does not mention the role, so nobody is pinged - here is where each listing service stands."}
         </p>
 
         <div className="ov-statrow">

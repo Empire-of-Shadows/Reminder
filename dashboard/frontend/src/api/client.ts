@@ -16,7 +16,7 @@ import type {
   DeleteUserDataResponse,
   UserDataSummary,
 } from "./types";
-import { apiFetch, apiUrl } from "../_engine/api/http";
+import { apiFetch, apiUrl, discordLoginUrl } from "../_engine/api/http";
 
 // Re-export the shared transport surface so pages keep importing from "./api/client".
 export {
@@ -98,6 +98,29 @@ export const api = {
       body: JSON.stringify({ confirm: true, guild_id: guildId ?? null }),
     }),
 };
+
+/**
+ * The sign-in link that brings the visitor back to `path` on this dashboard.
+ *
+ * The server's redirect allowlist is anchored on `^https?://` and silently replaces
+ * a bare path with the default home, so the return address is sent ABSOLUTE. Only a
+ * path on this same site is honoured, and never /login itself, so the parameter
+ * cannot become an open redirect.
+ */
+export function signInUrl(path: string | null | undefined): string {
+  if (!path || !path.startsWith("/") || path.startsWith("//") || path.startsWith("/\\")) {
+    return discordLoginUrl();
+  }
+  try {
+    const url = new URL(path, window.location.origin);
+    if (url.origin !== window.location.origin || url.pathname === "/login") {
+      return discordLoginUrl();
+    }
+    return discordLoginUrl(url.href);
+  } catch {
+    return discordLoginUrl();
+  }
+}
 
 /** Build the bot-invite link for a specific guild (explicit click, no popup). */
 export function inviteLink(baseUrl: string, guildId: string): string {

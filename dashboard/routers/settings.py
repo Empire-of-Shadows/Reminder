@@ -3,6 +3,12 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from dashboard.auth.dependencies import get_current_user
 from dashboard.auth.panel_role import resolve_panel_role, require_panel_access
+from dashboard._engine.auth.panel_access import has_manage_guild
+from dashboard._engine.discord_cache import (
+    discord_cache,
+    missing_permissions,
+    permission_label,
+)
 from dashboard._engine.auth.csrf import verify_csrf
 from dashboard.services import stats as stats_service
 from storage.audit_log import get_audit_log_manager
@@ -77,6 +83,60 @@ async def _validate_guild_ids(guild_id: int, updates: dict) -> None:
                     status_code=422,
                     detail="roles.admin_role_ids contains a role not in this guild",
                 )
+
+
+#: What the bot needs in the Bump Channel and the Timers Channel - the same list the
+#: in-Discord panel checks (admin/settings/panel_configs.py required_channel_perms).
+_CHANNEL_PERMS = ["view_channel", "send_messages", "embed_links", "read_message_history"]
+
+
+async def _validate_like_the_panel(guild_id: int, before: GuildConfig, updates: dict) -> None:
+    """Refuse the saves the in-Discord panel refuses, for the values this save changes.
+
+    The panel refuses a bump role that can never ping anybody and a channel the bot
+    cannot fully use; the dashboard used to accept both, and the result was a server
+    that looked set up and silently reminded nobody. Discord lookups fail open
+    (an unreachable API must not block a save), exactly like the id checks below.
+    """
+    new_role = updates.get("bump_role")
+    if new_role and new_role != int(before.bump_role or 0):
+        if str(new_role) == str(guild_id):
+            raise HTTPException(
+                status_code=422,
+                detail="@everyone cannot be the bump role - the reminder would ping nobody. "
+                       "Pick a normal, mentionable role.",
+            )
+        role = await discord_cache.guild_role(str(guild_id), str(new_role))
+        if role is not None:
+            if role["managed"]:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"@{role['name']} is managed by an integration, so Discord will not "
+                           f"let it be mentioned and the reminder would ping nobody. Pick a "
+                           f"normal, mentionable role.",
+                )
+            if not role["mentionable"]:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"@{role['name']} is not mentionable, so the reminder would ping "
+                           f"nobody. Turn on 'Allow anyone to @mention this role' in Server "
+                           f"Settings > Roles, or pick another role.",
+                )
+
+    for key in ("bump_channel", "timers_channel"):
+        new_channel = updates.get(key)
+        if not new_channel or new_channel == int(getattr(before, key) or 0):
+            continue
+        perms = await discord_cache.bot_channel_permissions(str(guild_id), str(new_channel))
+        missing = missing_permissions(perms, _CHANNEL_PERMS)
+        if missing:
+            label = "bump channel" if key == "bump_channel" else "timers channel"
+            raise HTTPException(
+                status_code=422,
+                detail=f"The bot is missing permissions in that {label}: "
+                       f"{', '.join(permission_label(m) for m in missing)}. Grant them in the "
+                       f"channel's settings, then save again.",
+            )
 
 
 def _coerce_id(value) -> int:
@@ -203,7 +263,17 @@ async def update_settings(
             for bot, seconds in _coerce_bot_delay(value).items():
                 updates[f"bot_delay.{bot}"] = seconds
 
+    # Changing who can manage needs Manage Server itself, as it does in the panel:
+    # otherwise a Panel Access role holder could hand that access to anyone.
+    if "roles" in updates and updates["roles"] != _normalized_roles(before.roles):
+        if not await has_manage_guild(session, str(guild_id)):
+            raise HTTPException(
+                status_code=403,
+                detail="Only members with the Manage Server permission can change who can manage this bot.",
+            )
+
     if updates:
+        await _validate_like_the_panel(guild_id, before, updates)
         await _validate_guild_ids(guild_id, updates)
         if not await gcm.set_values(guild_id, updates):
             raise HTTPException(status_code=500, detail="Failed to save settings")

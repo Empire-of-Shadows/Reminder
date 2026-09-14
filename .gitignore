@@ -95,3 +95,4 @@ docker/Dockerfile.local
 docker/Dockerfile.dashboard.local
 docker/docker-compose.local.yml
 /dashboard/.claude/
+/dashboard/frontend/.claude/

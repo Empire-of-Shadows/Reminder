@@ -33,6 +33,17 @@ logger = get_logger("dashboard.routers.member")
 router = APIRouter(tags=["member"])
 
 
+def pings_role(config: GuildConfig) -> bool:
+    """Whether a reminder sent now would mention the bump role.
+
+    A custom message replaces the standard wording, and without ``{bump_role}`` in it
+    the reminder mentions nobody - a deliberate choice some servers make. A member
+    must not be told they get pinged when they do not.
+    """
+    message = (config.custom_message or "").strip()
+    return not message or "{bump_role}" in message
+
+
 @router.get("/guilds/{guild_id}/member/bumps")
 async def member_bumps(guild_id: int, _session: dict = Depends(require_guild_member)):
     """Per-bot bump timings for a member of this server.
@@ -112,13 +123,21 @@ async def member_reminder(guild_id: int, session: dict = Depends(require_guild_m
         }
     held = lookup.roles
 
-    pinged = str(config.bump_role) in held
+    holds = str(config.bump_role) in held
+    if holds and not pings_role(config):
+        return {
+            "reminder_role_set": True,
+            "bump_channel_set": watching,
+            "bots_tracked": tracked,
+            "you_will_be_pinged": False,
+            "status": "pings_off",
+        }
     return {
         "reminder_role_set": True,
         "bump_channel_set": watching,
         "bots_tracked": tracked,
-        "you_will_be_pinged": pinged,
-        "status": "yes" if pinged else "no",
+        "you_will_be_pinged": holds,
+        "status": "yes" if holds else "no",
     }
 
 
@@ -229,6 +248,9 @@ async def my_bump_view(guild_id: int, session: dict = Depends(require_guild_memb
         "holds_bump_role": await _holds_bump_role(config, session, guild_id),
         "timers": timers,
         "configured": configured,
+        # Whether reminders mention the role at all (a custom message can leave the
+        # mention out). A boolean only - the message text never leaves this file.
+        "pings_on": pings_role(config),
         # The browser's clock cannot be trusted to say whether a cooldown has
         # expired, so every countdown on the page is anchored to this instead.
         "server_time": server_time,

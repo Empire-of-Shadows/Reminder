@@ -86,7 +86,8 @@ REMINDERS = HelpCategory(
         "**The reminder**\n"
         "\N{BULLET} Only the bump role is ever pinged - never everyone, never you directly\n"
         "\N{BULLET} If two listing bots come due together, you get one message covering both\n"
-        "\N{BULLET} An admin can replace the wording with the server's own message\n"
+        "\N{BULLET} An admin can replace the wording with the server's own message; "
+        "a message without the role placeholder pings nobody\n"
         "\n"
         "**The status message**\n"
         "A few seconds after a bump, the bot posts a status message in the bump channel "
@@ -107,7 +108,7 @@ ADMIN = HelpCategory(
     accent=discord.Color.red().value,
     thumbnail=None,
     admin_only=True,
-    blurb="Configuration and setup. Manage Server permission required.",
+    blurb="Configuration and setup. Manage Server or a Panel Access role required.",
     body=(
         "**`/admin panel`**\n"
         "The configuration panel for this server:\n"
@@ -121,7 +122,9 @@ ADMIN = HelpCategory(
         "**First-time setup**\n"
         "Set a **Bump Channel** and a **Bump Role** under Core Setup. Nothing runs until "
         "both are set, and the other sections stay locked. If somebody bumps before that "
-        "is done, the bot posts a one-time notice explaining what is missing.\n"
+        "is done, the bot posts a one-time notice explaining what is missing. It does the "
+        "same, at most once a day, when a bump comes from a listing bot that is not ticked "
+        "under Bump Bots.\n"
         "\n"
         "The bot needs View Channel, Send Messages, Embed Links and Read Message History in the bump channel.\n"
         "\n"

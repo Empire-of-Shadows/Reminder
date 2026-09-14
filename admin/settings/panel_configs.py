@@ -27,6 +27,7 @@ from ..views.panel_engine import PanelNode
 from ..actions.features import panel_roles_pair
 from storage.config_manager import get_guild_config_manager
 from storage.sub_systems.bump_config import (
+    BOT_DISPLAY_NAMES,
     BUMP_BOTS,
     BUMP_BOTS_CHOICES,
     SUPPORTED_BOTS,
@@ -78,6 +79,29 @@ async def _set_role(guild_id: int, values: list) -> bool:
 async def _clear_role(guild_id: int) -> bool:
     cm = await get_guild_config_manager()
     return await cm.set_value(guild_id, "bump_role", 0)
+
+
+async def _create_bump_role(guild, name: str, actor):
+    """Create Role for Bump Role: a role the reminder can actually ping.
+
+    Discord creates roles unmentionable, which the validator below refuses, so the
+    engine's default create-then-save could never save a bump role. This creates
+    it mentionable and saves it. Engine contract (``PanelNode.create_entity``):
+    async (guild, name, actor) -> (entity | None, error | None); owns persistence.
+    """
+    try:
+        role = await guild.create_role(
+            name=name,
+            mentionable=True,
+            reason=f"Admin panel: bump role created by {actor}",
+        )
+    except discord.Forbidden:
+        return None, "I need the **Manage Roles** permission to create a role."
+    except discord.HTTPException as e:
+        return None, f"Discord refused to create the role ({e.status})."
+    if not await _set_role(guild.id, [role.id]):
+        return None, f"**@{role.name}** was created, but saving it as the Bump Role failed."
+    return role, None
 
 
 async def _bump_role_validator(guild, values) -> str | None:
@@ -262,6 +286,7 @@ SETUP_CONFIG = PanelNode(
             set_values=_set_role,
             clear_values=_clear_role,
             value_validator=_bump_role_validator,
+            create_entity=_create_bump_role,
             min_values=1,
             max_values=1,
         ),
@@ -300,7 +325,7 @@ SETUP_CONFIG = PanelNode(
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _bot_label(bot_name: str) -> str:
-    return bot_name.capitalize()
+    return BOT_DISPLAY_NAMES.get(bot_name, bot_name.capitalize())
 
 
 def _build_cooldown_children() -> dict:
@@ -368,13 +393,14 @@ MESSAGES_CONFIG = PanelNode(
             label="Custom Reminder Message",
             kind="modal_input",
             description=(
-                "Optional message appended to reminders. Placeholders: "
+                "Optional wording that replaces the standard reminder. Placeholders: "
                 "`{bump_role}` (the role mention) and `{bots}` (the bots due). "
-                "Leave empty to clear."
+                "**Leave out `{bump_role}` and the reminder pings nobody.** "
+                "Leave empty to go back to the standard reminder."
             ),
             modal_title="Custom Reminder Message",
             modal_label="Message",
-            modal_placeholder="Time to bump! {bump_role}",
+            modal_placeholder="Time to bump {bots}! {bump_role} (no {bump_role} = no ping)",
             modal_min_length=0,
             modal_max_length=500,
             modal_paragraph=True,

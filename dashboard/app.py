@@ -1,12 +1,13 @@
 """FastAPI application for the ImperialReminder web dashboard."""
 
+import asyncio
 import os
 import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from dashboard import db
@@ -113,27 +114,59 @@ app.include_router(audit_log_router, prefix="/api")
 app.include_router(user_data_router, prefix="/api")
 
 
+# Each database gets this long to answer. Both pings run at once, so /health stays inside
+# HealthCheck's 5 second poll timeout even when both are down.
+_HEALTH_PING_TIMEOUT = 2.5
+
+
+async def _ping(get_client, name: str) -> bool:
+    """One bounded ping. The failure is logged; none of its detail reaches the response."""
+    try:
+        client = get_client()
+        await asyncio.wait_for(client.admin.command("ping"), _HEALTH_PING_TIMEOUT)
+        return True
+    except Exception:
+        health_logger.warning(f"Mongo health ping failed for the {name} database", exc_info=True)
+        return False
+
+
 @app.get("/health")
 async def health():
+    """Liveness plus both databases, per the fleet health contract.
+
+    ``database`` is the bot's own data (MONGO_URI): without it no page can read or save
+    a setting, so a failure is ``unhealthy`` with HTTP 503, the rule the bot's own
+    endpoint follows. ``sessions`` is the shared sign-in store: without it nobody can
+    sign in but the public pages still load, so on its own it is ``degraded`` with
+    HTTP 200. The body carries statuses only.
+    """
+    from storage.settings.collections import db_manager
+
+    data_ok, sessions_ok = await asyncio.gather(
+        _ping(db_manager.get_client, "bot"),
+        _ping(db._get_client, "shared sessions"),
+    )
+    if not data_ok:
+        status = "unhealthy"
+    elif not sessions_ok:
+        status = "degraded"
+    else:
+        status = "healthy"
     response = {
-        "status": "healthy",
+        "status": status,
         "timestamp": time.time(),
         "service": "ImperialReminder Dashboard",
         "component": "ImperialReminder Dashboard - WebUI",
         "uptime": int(time.time() - _START_TIME),
         "frontend_built": os.path.isfile(_index_html),
+        "database_connected": data_ok,
+        "sessions_connected": sessions_ok,
+        "checks": {
+            "database": {"status": "healthy" if data_ok else "unhealthy"},
+            "sessions": {"status": "healthy" if sessions_ok else "unhealthy"},
+        },
     }
-    try:
-        client = db._get_client()
-        await client.admin.command("ping")
-        response["database_connected"] = True
-        response["checks"] = {"database": {"status": "healthy"}}
-    except Exception:
-        health_logger.warning("Mongo health ping failed", exc_info=True)
-        response["database_connected"] = False
-        response["checks"] = {"database": {"status": "unhealthy"}}
-        response["status"] = "degraded"
-    return response
+    return JSONResponse(status_code=503 if status == "unhealthy" else 200, content=response)
 
 
 # Serve bundled static assets (JS/CSS/images) from the Vite build.

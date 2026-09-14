@@ -22,7 +22,7 @@ SETUP_GUIDE_TEXT = (
     "reminder ping will be sent).\n"
     "**2\\. Bump Role** - the role that gets mentioned when a bump is ready.\n"
     "\n"
-    "Open **Channels** and **Bump Role** below to set those. Once both are set, "
+    "Open **Core Setup** below to set both. Once they are set, "
     "the **Bump Bots** and **Messages** sections unlock.\n"
     "\n"
     "**Supported bots:** Disboard, BumpIt, Bump4You, WeBump, OneBump, Unfocused.\n"

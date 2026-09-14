@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, discordLoginUrl } from "../api/client";
+import { api, signInUrl } from "../api/client";
 import type { ScopeGuild, User, UserDataSummary } from "../api/types";
 import type { Guild as PickerGuild } from "../_engine/api/types";
 import { formatError } from "../_engine/api/formatError";
@@ -249,7 +249,7 @@ export default function PrivacyPage() {
                 Sign in with Discord to export or erase the records tied to your account.
               </p>
               <div className="admin-actions">
-                <a className="btn btn-primary" href={discordLoginUrl("/me/privacy")}>
+                <a className="btn btn-primary" href={signInUrl("/me/privacy")}>
                   Sign in with Discord
                 </a>
               </div>

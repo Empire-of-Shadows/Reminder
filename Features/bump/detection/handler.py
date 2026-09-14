@@ -12,7 +12,7 @@ from Features.bump.display.embed_manager import TimerEmbedManager
 from storage.sub_systems.bump_config import (
     DISBOARD_ID, DISBOARD_KEYWORD, TWO, Bump4You, BUMP4YOU_ID, BUMPIT_ID,
     BUMPIT_SUCCESS_KEYWORD, ONE, BUMP_BOTS, WEBUMP_ID, WEBUMP_SUCCESS,
-    SUCCESS_KEYWORDS, BUMP_BOTS_INFO
+    SUCCESS_KEYWORDS, BUMP_BOTS_INFO, BOT_DISPLAY_NAMES
 )
 from storage.log import get_logger
 from admin.setup_notice import setup_notice_embed
@@ -40,6 +40,9 @@ class BumpHandler(commands.Cog):
         # In memory on purpose - a restart costing one extra nudge is a better
         # trade than a database write on a path that exists to be rare.
         self._setup_nudged = {}
+        # Guilds already told a bump came from a bot they have not ticked:
+        # guild_id -> timestamp. Same once-a-day rule and the same reasoning.
+        self._untracked_nudged = {}
 
     async def cog_unload(self):
         """Cancel pending 10s batch-send tasks so reload/shutdown never orphans them."""
@@ -128,6 +131,56 @@ class BumpHandler(commands.Cog):
         except discord.HTTPException as e:
             logger.warning(f"[{guild.id}] Failed to send setup nudge: {e}")
 
+    async def _maybe_nudge_untracked(self, message, bot_name: str) -> None:
+        """Tell a server that a bump came from a listing bot it has not ticked.
+
+        Detection only times the bots in Enabled Bots, and a new server starts with
+        none, so a server that finished Core Setup and bumped would otherwise hear
+        nothing at all. Same rules as the setup nudge: only a real success message
+        from a bot recognised by id, only in the server's own bump channel, and at
+        most once per server per day. It is a channel message answering that
+        server's own bump - never a DM (Discord Developer Policy, 2024-07-08).
+        """
+        guild = message.guild
+        now = time.time()
+        last = self._untracked_nudged.get(guild.id)
+        if last is not None and now - last < _SETUP_NUDGE_INTERVAL:
+            return
+        self._untracked_nudged[guild.id] = now
+
+        if len(self._untracked_nudged) > 1000:
+            cutoff = now - _SETUP_NUDGE_INTERVAL
+            for gid, ts in list(self._untracked_nudged.items()):
+                if ts < cutoff:
+                    self._untracked_nudged.pop(gid, None)
+
+        perms = message.channel.permissions_for(guild.me)
+        if not (perms.send_messages and perms.embed_links):
+            logger.info(
+                f"[{guild.id}] Skipping untracked-bot notice in channel {message.channel.id} - "
+                "missing Send Messages or Embed Links"
+            )
+            return
+
+        name = BOT_DISPLAY_NAMES.get(bot_name, bot_name.capitalize())
+        try:
+            embed = await setup_notice_embed(
+                guild,
+                what=f"reminders for {name}",
+                path="Bump Bots -> Enabled Bots",
+                detail=(
+                    f"I saw that {name} bump, but {name} is not ticked in Enabled Bots, "
+                    f"so no reminder was scheduled. Tick it and I will start reminding you."
+                ),
+                title="Bump Detected - Bot Not Tracked",
+            )
+            await message.channel.send(embed=embed)
+            logger.info(f"[{guild.id}] Sent untracked-bot notice for {bot_name}")
+        except discord.Forbidden:
+            logger.info(f"[{guild.id}] Forbidden sending untracked-bot notice")
+        except discord.HTTPException as e:
+            logger.warning(f"[{guild.id}] Failed to send untracked-bot notice: {e}")
+
     def _is_bump_recently_processed(self, guild_id: int, bot_name: str) -> bool:
         """
         Check if this bump was recently processed to prevent duplicate handling.
@@ -202,7 +255,10 @@ class BumpHandler(commands.Cog):
 
         if bot_info:
             bot_name, delay = bot_info
-            if bot_name in enabled_bots and any(keyword in text for keyword in SUCCESS_KEYWORDS):
+            if any(keyword in text for keyword in SUCCESS_KEYWORDS):
+                if bot_name not in enabled_bots:
+                    await self._maybe_nudge_untracked(message, bot_name)
+                    return
                 # Check for duplicate detection
                 if self._is_bump_recently_processed(message.guild.id, bot_name):
                     return
@@ -227,7 +283,7 @@ class BumpHandler(commands.Cog):
         )
 
         # --- Always refetch if it's WeBump ---
-        if bot_info and bot_info[0] == "WeBump":
+        if bot_info and bot_info[0] == "webump":
             try:
                 after = await after.channel.fetch_message(after.id)
                 logger.debug(f"Force-refetch WeBump message {after.id}")
@@ -246,7 +302,10 @@ class BumpHandler(commands.Cog):
 
         if bot_info:
             bot_name, delay = bot_info
-            if bot_name in enabled_bots and any(keyword in after_text for keyword in SUCCESS_KEYWORDS):
+            if any(keyword in after_text for keyword in SUCCESS_KEYWORDS):
+                if bot_name not in enabled_bots:
+                    await self._maybe_nudge_untracked(after, bot_name)
+                    return
                 # Check for duplicate detection
                 if self._is_bump_recently_processed(after.guild.id, bot_name):
                     return
@@ -289,7 +348,9 @@ class BumpHandler(commands.Cog):
     async def get_timers(self, config):
         active_timers = []
         expired_timers = []
-        enabled_bots = config.enabled_bots or list(BUMP_BOTS.keys())
+        # Only the bots the server ticked. Falling back to every bot when the list is
+        # empty rebuilt reminders on restart for bots nobody tracks any more.
+        enabled_bots = config.enabled_bots or []
         now = time.time()
 
         for bot_name in enabled_bots:
@@ -326,7 +387,23 @@ class BumpHandler(commands.Cog):
             logger.error(f"Error scheduling bump reminder for {bot_name}: {e}")
 
     async def _send_bump_reminder(self, channel_id: int, guild_id: int, role_id: int, bot_name: str):
+        """Fire one reminder, against the server's settings as they are NOW.
+
+        The timer was scheduled with the channel and role in force at bump time. An
+        admin may have unticked the bot, moved the Bump Channel or changed the Bump
+        Role since, so those are re-read here rather than trusted from the timer.
+        """
         try:
+            config = await self.bot.guild_config_manager.get_config(guild_id)
+            if bot_name not in (config.enabled_bots or []):
+                logger.info(f"[{guild_id}] Skipping {bot_name} reminder - no longer in Enabled Bots")
+                return
+            if not config.bump_channel:
+                logger.info(f"[{guild_id}] Skipping {bot_name} reminder - no Bump Channel set")
+                return
+            channel_id = int(config.bump_channel)
+            role_id = int(config.bump_role or 0)
+
             channel = self.bot.get_channel(channel_id)
             if channel is None:
                 try:
@@ -362,7 +439,9 @@ class BumpHandler(commands.Cog):
         if reminders:
             config = await self.bot.guild_config_manager.get_config(channel.guild.id)
 
-            bots = ", ".join(f"**{bot_name}**" for _, bot_name in reminders)
+            bots = ", ".join(
+                f"**{BOT_DISPLAY_NAMES.get(bot_name, bot_name)}**" for _, bot_name in reminders
+            )
             role_mentions = set(role_id for role_id, _ in reminders if role_id)
             role_mentions_text = " ".join(f"<@&{r}>" for r in role_mentions)
 
@@ -390,6 +469,18 @@ class BumpHandler(commands.Cog):
                 )
             except Exception as e:
                 logger.error(f"Failed to send bump reminder for guild {channel.guild.id}: {e}")
+                return
+
+            # The countdown embed was drawn at bump time and still shows this bot as
+            # cooling down. Redraw it so "Ready to Bump" is true when the ping lands.
+            try:
+                fresh = await self.bot.guild_config_manager.get_config(channel.guild.id)
+                active_timers, expired_timers = await self.get_timers(fresh)
+                await self.embed_manager.schedule_embed_update(
+                    channel.guild.id, channel.id, fresh.bump_role, active_timers, expired_timers
+                )
+            except Exception as e:
+                logger.warning(f"[{channel.guild.id}] Could not refresh the countdown embed: {e}")
 
     async def _mark_reminded(self, guild_id: int, bot_names, timestamps: dict) -> None:
         """Record which bump each sent reminder covered.

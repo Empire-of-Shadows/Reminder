@@ -110,6 +110,7 @@ class TimerHandler:
             self.timer_ends[timer_id] = end_mono
 
             async def timer_task():
+                me = asyncio.current_task()
                 try:
                     logger.info(f"Timer started: {timer_id} for {scheduled_delay:.2f} seconds")
                     # Use a single sleep; end time recorded with monotonic prevents drift for remaining queries
@@ -153,11 +154,16 @@ class TimerHandler:
                 except Exception as es:
                     logger.error(f"Unhandled error in timer {timer_id}: {es}", exc_info=True)
                 finally:
-                    # Cleanup
+                    # Cleanup - only this task's own entries. A timer that was replaced
+                    # finishes cancelling AFTER run_timer stored its replacement under
+                    # the same id; popping unconditionally erased the new timer's
+                    # tracking, so it could no longer be cancelled (server leave,
+                    # shutdown) or deduplicated by the next reschedule.
                     async with self._lock:
-                        self.active_timers.pop(timer_id, None)
-                        self.timer_ends.pop(timer_id, None)
-                        self.timer_meta.pop(timer_id, None)
+                        if self.active_timers.get(timer_id) is me:
+                            self.active_timers.pop(timer_id, None)
+                            self.timer_ends.pop(timer_id, None)
+                            self.timer_meta.pop(timer_id, None)
 
             task = asyncio.create_task(timer_task(), name=f"timer:{timer_id}")
             self.active_timers[timer_id] = task

@@ -18,15 +18,15 @@ from startup.presence import PresenceRotator
 # Activity pools by ActivityType name: playing, watching, listening.
 POOLS = {
     "playing": [
-        "hide and seek with /bump",
+        "hide and seek with the bump timer",
         "tag - you're bumped!",
         "90% uptime simulator",
         "with the bots code",
     ],
     "watching": [
-        "for /bump commands",
+        "for bump messages",
         "you configure /admin panel",
-        "every /bump like a hawk",
+        "every bump like a hawk",
         "users ignore the timer",
         "for frequent restarts",
     ],
@@ -56,3 +56,17 @@ class IdleManager(PresenceRotator):
             interval_jitter=3.0,
             status=discord.Status.idle,
         )
+        # The activity the rotation last chose. Discord forgets presence when the
+        # gateway reconnects, and discord.py does not re-send it, so the reconnect
+        # path restores this instead of leaving the bot Online with no activity.
+        self.last_activity = None
+
+    async def _compute_next_activity(self):
+        activity, status = await super()._compute_next_activity()
+        if activity is not None:
+            self.last_activity = activity
+        return activity, status
+
+    async def restore_presence(self) -> None:
+        """Re-send the rotation's status and last activity (used after a reconnect)."""
+        await self.bot.change_presence(status=self.default_status, activity=self.last_activity)

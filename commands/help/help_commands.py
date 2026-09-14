@@ -122,6 +122,22 @@ class ReminderHelpView(ui.LayoutView):
         self.stop()
 
 
+async def has_panel_access(user, guild) -> bool:
+    """The panel's own access rule: Manage Server or a Panel Access role.
+
+    Falls back to Manage Server alone if the role lookup fails - the member still
+    gets every member page.
+    """
+    if guild is None or not isinstance(user, discord.Member):
+        return False
+    try:
+        from admin.settings.bindings import resolve_panel_role  # deferred: pulls the panel engine
+        return await resolve_panel_role(user, guild.id) == "admin"
+    except Exception as e:
+        logger.warning(f"Panel access lookup failed for /help in guild {guild.id}: {e}")
+        return bool(user.guild_permissions.manage_guild)
+
+
 class HelpCommands(commands.Cog):
     """Public /help command. Ephemeral, browses categories via dropdown."""
 
@@ -133,7 +149,7 @@ class HelpCommands(commands.Cog):
     @app_commands.guild_only()
     async def help(self, interaction: discord.Interaction):
         try:
-            is_admin = interaction.user.guild_permissions.manage_guild
+            is_admin = await has_panel_access(interaction.user, interaction.guild)
             view = ReminderHelpView(self.bot, is_admin)
             await interaction.response.send_message(
                 view=view, files=view.files, ephemeral=True

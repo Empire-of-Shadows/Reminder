@@ -145,6 +145,8 @@ export interface BumpsOverview extends GuildBumpStats {
 
 /** What is configured. Snowflakes are strings, '' when unset. */
 export interface SetupOverview {
+  /** false when a custom message leaves out {bump_role}. */
+  custom_message_pings: boolean;
   bump_channel: string;
   bump_role: string;
   timers_channel: string;
@@ -205,7 +207,8 @@ export interface MemberReminder {
    *  an empty answer cannot be told apart from a failed one. Never render it
    *  as "no". */
   you_will_be_pinged: boolean | null;
-  status: "yes" | "no" | "no_role" | "unknown";
+  /** pings_off: holds the role, but the custom message leaves the mention out. */
+  status: "yes" | "no" | "no_role" | "pings_off" | "unknown";
 }
 
 // ── The member's whole server page (GET /api/guilds/{id}/my-bump-view) ────
@@ -234,6 +237,8 @@ export interface MyBumpView {
   timers: MyBumpTimer[] | null;
   /** Whether this server has both a bump channel and a reminder role set. */
   configured: boolean;
+  /** false when a custom message leaves out {bump_role}, so reminders ping nobody. */
+  pings_on: boolean;
   /** Server's current unix time - anchor countdowns to it, not the browser's
    *  clock, so a skewed local clock cannot make a bump look ready early. */
   server_time: number;

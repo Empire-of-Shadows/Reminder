@@ -186,7 +186,10 @@ export default function AuditLogPage() {
               />
             </div>
 
-            {entries.length === 0 ? (
+            {entries.length === 0 && error ? (
+              // A refused or failed load is not an empty history.
+              <p className="ov-body">The change history could not be shown.</p>
+            ) : entries.length === 0 ? (
               <p className="ov-body">
                 Nothing has been changed in this server yet. Every edit from the panel or this
                 dashboard will be recorded here.

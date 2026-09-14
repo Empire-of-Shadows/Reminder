@@ -3,6 +3,46 @@
 All notable, community-facing changes to ImperialReminder are recorded here in plain language.
 For the technical, commit-level history, see git.
 
+## [Unreleased] - 2026-09-13 (reminders that follow your settings)
+
+### Added
+- **A bump from a listing bot you have not ticked now gets a short notice.** New servers start
+  with no bump bots ticked, so the bot used to ignore every bump in silence. When it sees a
+  real bump from a listing bot that is not ticked under Bump Bots, it now says so in the bump
+  channel - at most once a day per server.
+
+### Changed
+- **Reminders follow your settings as they are when the reminder is due.** Unticking a bot now
+  stops its reminder, and moving the Bump Channel or changing the Bump Role takes effect on the
+  next reminder instead of after a restart.
+- **The countdown message refreshes when a reminder goes out,** so the bot that just came off
+  cooldown shows as ready to bump.
+- **Bot names are spelled properly everywhere:** BumpIt, Bump4You and WeBump in the countdown,
+  the reminder and the admin panel.
+- **It is clearer that a custom reminder message without `{bump_role}` pings nobody.** Leaving
+  the placeholder out is a valid choice; the panel, the dashboard and the member page now say
+  what it does.
+- **Staff with a Panel Access role see the Admin page in `/help`.**
+
+### Fixed
+- **Deleting the Bump Channel or Bump Role no longer leaves the server looking set up.** The
+  setting is cleared, so the bot says what is missing the next time someone bumps.
+- **A restart no longer sends reminders for bots nobody tracks any more.**
+- **WeBump bumps are read reliably after WeBump edits its message.**
+- **Create Role on Bump Role works.** The new role is created mentionable and saved.
+- **The bot returns to its usual status after a connection drop** instead of showing Online
+  with nothing listed.
+- **The dashboard refuses the same settings the admin panel refuses:** a bump role nobody can be
+  pinged through, a channel the bot cannot fully use, and - for anyone without Manage Server -
+  changes to who can manage the bot.
+- **The dashboard no longer says the live countdown needs setting up** when it is simply using
+  the bump channel, which is the default.
+- **Signing in to the dashboard takes you back to the page you opened,** including the privacy
+  page.
+- **A change history page you cannot open no longer says nothing has been changed.**
+- **The admin panel's details view lists every ticked bump bot,** not just the first.
+- **The status page reports a database outage** for both the bot and the dashboard.
+
 ## [Unreleased] - 2026-09-01 (an honest server page for members)
 
 ### Changed

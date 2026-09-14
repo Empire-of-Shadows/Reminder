@@ -245,8 +245,12 @@ function railBadge(slug: Slug, d: GuildSettings, bots: BumpBot[]): Badge {
       return changed > 0 ? { text: "Custom", tone: "ok" } : { text: "Default", tone: "" };
     }
     case "timers":
+      // An unset timers channel means the bump channel, so it is only missing when
+      // there is no bump channel either.
       if (!d.timers_message) return { text: "Off", tone: "" };
-      return d.timers_channel ? { text: "On", tone: "ok" } : { text: "Set up", tone: "warn" };
+      return d.timers_channel || d.bump_channel
+        ? { text: "On", tone: "ok" }
+        : { text: "Set up", tone: "warn" };
     case "message":
       return (d.custom_message ?? "").trim()
         ? { text: "Written", tone: "ok" }
@@ -618,7 +622,7 @@ export default function SettingsPage() {
                         value={settings.timers_channel || null}
                         channels={channels}
                         onChange={(v) => update("timers_channel", v ?? "")}
-                        description="Optional. Leave unset to keep the countdown out of your server."
+                        description="Optional. Leave unset to post the countdown in the bump channel. To keep it out of your server, turn the countdown off above."
                       />
                     </FRow>
                   </Fieldset>
@@ -632,7 +636,7 @@ export default function SettingsPage() {
                       rows={3}
                       onChange={(v) => update("custom_message", v)}
                       placeholder="It's time to bump! {bump_role} - {bots}"
-                      description="Optional. {bump_role} becomes the ping and {bots} becomes the list of bump bots."
+                      description="Optional. {bump_role} becomes the ping and {bots} becomes the list of bump bots. Leave out {bump_role} and the reminder pings nobody."
                     />
                   </Fieldset>
                 )}

@@ -158,15 +158,19 @@ function WillYouBePinged({
       ? "Yes"
       : reminder.status === "no"
         ? "No"
-        : reminder.status === "no_role"
-          ? "Nobody is"
-          : "Not confirmed";
+        : reminder.status === "pings_off"
+          ? "No"
+          : reminder.status === "no_role"
+            ? "Nobody is"
+            : "Not confirmed";
 
   const chip =
     reminder.status === "yes" ? (
       <span className="ov-chip ov-chip--good">You get the ping</span>
     ) : reminder.status === "no" ? (
       <span className="ov-chip">Not your role</span>
+    ) : reminder.status === "pings_off" ? (
+      <span className="ov-chip">Pings turned off</span>
     ) : (
       <span className="ov-chip ov-chip--warn">
         {reminder.status === "no_role" ? "No role chosen" : "Could not confirm"}
@@ -182,6 +186,8 @@ function WillYouBePinged({
           ? "You hold this server's reminder role, so the bot mentions you when a bump comes off cooldown."
           : reminder.status === "no"
             ? "The reminder pings one role in this server, and you do not have it. Ask a server manager if you want to be reminded."
+            : reminder.status === "pings_off"
+              ? "You hold this server's reminder role, but its reminder message does not mention the role, so nobody is pinged."
             : reminder.status === "no_role"
               ? "No reminder role has been chosen in this server yet, so the bot has nobody to ping when a bump is due."
               : "We could not confirm your roles in this server just now, so we will not guess. Reload the page to try again."}

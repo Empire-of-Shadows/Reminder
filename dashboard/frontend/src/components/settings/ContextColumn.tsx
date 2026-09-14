@@ -180,7 +180,14 @@ function ContextBody({ slug, draft, channels, roles, bots, overview }: ContextPr
   if (slug === "timers") {
     const rows: [string, string][] = [
       ["Countdown message", onOff(!!draft.timers_message)],
-      ["Timers channel", channelName(channels, draft.timers_channel || "")],
+      [
+        "Timers channel",
+        draft.timers_channel
+          ? channelName(channels, draft.timers_channel)
+          : draft.bump_channel
+            ? `Bump channel (${channelName(channels, draft.bump_channel)})`
+            : "Not set",
+      ],
     ];
     return (
       <KvCard
@@ -201,6 +208,10 @@ function ContextBody({ slug, draft, channels, roles, bots, overview }: ContextPr
       ["Length", `${(draft.custom_message ?? "").length} characters`],
     ];
     rows.push(["Being sent", text ? "Your wording" : "The standard reminder"]);
+    rows.push([
+      "Pings the reminder role",
+      !text || text.includes("{bump_role}") ? "Yes" : "No - {bump_role} is not in the message",
+    ]);
     return (
       <KvCard
         title="Right now"
