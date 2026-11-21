@@ -20,6 +20,7 @@ from typing import Any, Optional
 
 import discord
 
+from commands.help.help_content import SUPPORT_INVITE_URL as _SUPPORT_INVITE_URL
 from storage.config_manager import get_guild_config_manager
 from storage.audit_log import get_audit_log_manager
 from storage.log import get_logger
@@ -33,6 +34,12 @@ logger = get_logger("AdminBindings")
 # ── Static configuration ────────────────────────────────────────────────────────
 
 BOT_NAME = "Imperial Reminder"
+
+# This bot's support-server invite (defined once in commands/help/help_content.py).
+# With it set, the engine ends every panel crash notice with "If this keeps
+# happening, report it in the [support server](<url>)." and gives panel views and
+# modals a support-aware on_error. Expected refusals never carry it.
+SUPPORT_INVITE_URL: str = _SUPPORT_INVITE_URL
 
 # Breadcrumb the engine's setup notices use when telling an owner where to delegate
 # panel access. This bot's node sits at the panel's top level (no wrapping "Panel

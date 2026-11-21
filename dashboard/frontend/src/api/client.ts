@@ -24,7 +24,7 @@ export {
   ApiError,
   TimeoutError,
   discordLoginUrl,
-  logoutUrl,
+  logout,
 } from "../_engine/api/http";
 
 export const api = {

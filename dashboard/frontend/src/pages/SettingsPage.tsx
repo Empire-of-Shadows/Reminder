@@ -22,7 +22,7 @@ import {
   TextareaField,
   ToggleField,
 } from "../_engine/components/settings/fields";
-import AdminNav from "../components/AdminNav";
+import AdminNav, { useAdminHref } from "../components/AdminNav";
 import AppHeader from "../components/AppHeader";
 import ConfirmDialog from "../components/ConfirmDialog";
 import PageSkeleton from "../components/PageSkeleton";
@@ -265,6 +265,7 @@ function railBadge(slug: Slug, d: GuildSettings, bots: BumpBot[]): Badge {
 export default function SettingsPage() {
   const { guildId = "" } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
+  const adminHref = useAdminHref();
   const [channels, setChannels] = useState<Channel[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [channelsFailed, setChannelsFailed] = useState(false);
@@ -500,7 +501,7 @@ export default function SettingsPage() {
                       {showHistory && (
                         <Link
                           className="set-rail__item"
-                          to={`/settings/guilds/${guildId}/audit-log`}
+                          to={adminHref(`/settings/guilds/${guildId}/audit-log`)}
                         >
                           <span>Change history</span>
                         </Link>

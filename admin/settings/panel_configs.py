@@ -24,6 +24,7 @@ import discord
 
 from .panel_branding import PANEL_DESCRIPTION, PANEL_TITLE
 from ..views.panel_engine import PanelNode
+from ..views.base import with_support_line
 from ..actions.features import panel_roles_pair
 from storage.config_manager import get_guild_config_manager
 from storage.sub_systems.bump_config import (
@@ -96,11 +97,14 @@ async def _create_bump_role(guild, name: str, actor):
             reason=f"Admin panel: bump role created by {actor}",
         )
     except discord.Forbidden:
+        # Expected refusal the admin can fix: no support line.
         return None, "I need the **Manage Roles** permission to create a role."
     except discord.HTTPException as e:
-        return None, f"Discord refused to create the role ({e.status})."
+        return None, with_support_line(f"Discord refused to create the role ({e.status}).")
     if not await _set_role(guild.id, [role.id]):
-        return None, f"**@{role.name}** was created, but saving it as the Bump Role failed."
+        return None, with_support_line(
+            f"**@{role.name}** was created, but saving it as the Bump Role failed."
+        )
     return role, None
 
 

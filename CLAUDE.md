@@ -99,7 +99,7 @@ ImperialReminder is 100% free. The `commands/premium/` package, the engine `Prem
 
 Vendored admin_engine at the bot root; seam in `admin/settings/`. `MAIN_PANEL` tree: Core Setup (bump channel/role, timers channel) and Panel Access Roles (a top-level LEAF per ADMIN_PANEL_STANDARD 1.1 - engine `panel_roles_pair(include_mod=False, str_ids=True)` writing `roles.admin_role_ids`, the same list the dashboard reads, gated by the builder's default `manage_guild_pre_check`) in the `main` group, then Bump Bots (enabled bots, per-bot cooldowns), Messages (custom message, timer embed) in the `feature` group.
 
-The panel is **ADMIN-ONLY**: `bindings.resolve_panel_role` delegates to the engine `resolve_panel_role_from_config` (Manage Server OR `roles.admin_role_ids`) and collapses anything else to "none". There is no Mod tier, no `roles.mod_role_ids` key, and no `PanelNode.mod_allowed` flags in the seam. (The vendored engine still carries mod machinery for the bots that have not converted - leave it alone.)
+The panel is **ADMIN-ONLY**: `bindings.resolve_panel_role` delegates to the engine `resolve_panel_role_from_config` (Manage Server OR `roles.admin_role_ids`) and collapses anything else to "none". There is no Mod tier, no `roles.mod_role_ids` key, and no `PanelNode.mod_allowed` flags in the seam. (Corrected 2026-09-20: this line used to say the vendored engine still carried mod machinery for unconverted bots. It does not - `PanelNode.mod_allowed` and `MOD_ALLOWED_CATEGORIES` were stripped from all three engine masters fleet-wide on 2026-08-06 and appear nowhere in the tree, so do not go looking for them.)
 
 ### Dashboard (`dashboard/`)
 

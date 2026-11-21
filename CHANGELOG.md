@@ -3,6 +3,52 @@
 All notable, community-facing changes to ImperialReminder are recorded here in plain language.
 For the technical, commit-level history, see git.
 
+## [Unreleased] - 2026-11-21 (support server link, sign-in security)
+
+### Fixed
+- **Nobody can sign you in to the dashboard as someone else.** A login link started by another
+  person could finish in your browser and sign you in on their account. A login now only finishes
+  in the browser that started it.
+- **Other websites can no longer sign you out.** Logging out of the dashboard now only happens when
+  you press Log out.
+- **The support server link works again.** The link on the Support Server button in `/help` and in the
+  "report it in the support server" line of an error message pointed at an invite that has been
+  replaced. It now takes you to the support server, with the Imperial Reminder role, as before.
+
+## [Unreleased] - 2026-11-19 (support button in /help)
+
+### Added
+- **`/help` now has a Support Server button.** It sits next to the Dashboard button on every
+  help page and takes you straight into the support server.
+
+## [Unreleased] - 2026-11-07 (support server)
+
+### Changed
+- **When something breaks, the bot tells you where to report it.** If a command, the `/help`
+  menu, the admin panel or the dashboard hits an unexpected error, the message now ends with a
+  link to the support server. Ordinary refusals, like a missing permission or a cooldown, do not.
+- **The support server link in the README works again.** It now points at Imperial Reminder's
+  own invite into the Empires Support server; the old link had stopped working.
+
+### Fixed
+- **A button or menu that crashes no longer fails silently.** Instead of Discord's bare "This
+  interaction failed", you get a private message saying it did not go through.
+- **A refused command no longer answers you twice.**
+
+## [Unreleased] - 2026-09-26 (invite link)
+
+### Changed
+- **The dashboard's "add the bot" button asks for exactly the permissions the bot needs.**
+  It now uses the bot's own install settings from Discord: it no longer asks for permission to mention everyone, which reminders never needed - the bump role you pick is always a mentionable one.
+
+## [Unreleased] - 2026-09-21 (back link returns where you came from)
+
+### Changed
+- **The back link on the dashboard's admin pages now takes you back to where you came
+  from.** Open Settings or Change history from a server's overview and the link reads
+  "Overview" and returns you to that server's overview, even after moving between the admin
+  tabs. Open them from Manage and it still returns you to your servers.
+
 ## [Unreleased] - 2026-09-13 (reminders that follow your settings)
 
 ### Added

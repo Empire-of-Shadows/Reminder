@@ -34,14 +34,6 @@ router = APIRouter(tags=["dashboard"])
 _CONFIG_COLLECTION = "settings_guild_data"
 _ADMIN_PROBE_LIMIT = 25
 
-# Bot invite permissions: View Channels + Send Messages + Embed Links +
-# Read Message History + Mention Everyone.
-# Read Message History is not optional: bump detection refetches a WeBump message
-# after it is edited, falls back to a refetch on an empty payload, and cleans up
-# stale timer embeds. Without it all three fail quietly, so a server invited from
-# here would just never get reminders.
-_INVITE_PERMISSIONS = 0x400 | 0x800 | 0x4000 | 0x10000 | 0x20000  # 215040
-
 
 def _has_manage(guild: dict) -> bool:
     perms = int(guild.get("permissions", 0))
@@ -164,12 +156,13 @@ async def bot_invite_url():
     if not bot_id:
         return {"url": None}
 
-    url = (
-        f"https://discord.com/oauth2/authorize"
-        f"?client_id={bot_id}"
-        f"&permissions={_INVITE_PERMISSIONS}"
-        f"&scope=bot%20applications.commands"
-    )
+    # Bare install link: scopes and the permission set come from the app's Default
+    # Install Settings in the Discord Developer Portal, so the portal is the one place
+    # they are set and nothing here can drift from it. Portal set (verified 2026-09-26):
+    # 84992 - View Channel, Send Messages, Embed Links, Read Message History.
+    # Read Message History is not optional: bump detection refetches a late-filled
+    # message and old countdown embeds are cleaned up through it.
+    url = f"https://discord.com/oauth2/authorize?client_id={bot_id}"
     return {"url": url}
 
 

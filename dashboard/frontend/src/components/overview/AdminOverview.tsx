@@ -15,16 +15,18 @@ import {
   Tile,
 } from "../../_engine/components/overview/Tile";
 import { formatCount, formatDayLabel, formatRelative as formatIsoRelative } from "../../_engine/format";
+import { fromOverview } from "../AdminNav";
 import BumpStatusGrid from "../BumpStatusGrid";
 import { changeLabel, formatCountdown } from "./format";
 
 /** Where one setting is edited. This bot's settings page lives under
  *  `/settings/guilds/<id>/settings`, not at the engine's older flat default, so
  *  the links here and the builder handed to FeatureStrip both come from one
- *  place rather than being spelled out five times. */
+ *  place rather than being spelled out five times. Marked as coming from the
+ *  overview, so the admin pages' back link returns here. */
 function settingsHref(guildId: string, section?: string): string {
   const base = `/settings/guilds/${guildId}/settings`;
-  return section ? `${base}?s=${encodeURIComponent(section)}` : base;
+  return fromOverview(section ? `${base}?s=${encodeURIComponent(section)}` : base);
 }
 
 /** The server home. Every section of the payload can be null on its own. */
