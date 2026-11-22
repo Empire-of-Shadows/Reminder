@@ -3,6 +3,14 @@
 All notable, community-facing changes to ImperialReminder are recorded here in plain language.
 For the technical, commit-level history, see git.
 
+## [Unreleased] - 2026-11-22 (no lost first reminder)
+
+### Fixed
+- **A server's first reminder for a bump bot is no longer lost if the bot restarts.** If the
+  very first bump for a service came due while Imperial Reminder was offline, that reminder was
+  never sent. It now goes out as soon as the bot is back, like any other missed reminder.
+- **The reminder no longer starts with a stray space** when no bump role is set.
+
 ## [Unreleased] - 2026-11-21 (status page, reminders stay in your server, safer dashboard settings)
 
 ### Added

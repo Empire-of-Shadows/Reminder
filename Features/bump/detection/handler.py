@@ -330,6 +330,18 @@ class BumpHandler(commands.Cog):
                 logger.warning(f"[{message.guild.id}] No configuration found for the guild.")
                 return
 
+            # A server's first bump for this service has no `{bot}_reminded` marker yet, and
+            # the boot reschedule reads a missing marker as "a document older than the
+            # marker, assume it was announced" - so a first reminder that came due while the
+            # bot was down was silently lost (found 2026-11-22). Recording 0 ("nothing
+            # reminded yet") lets a restart fire it like any other missed reminder.
+            reminded_key = f"{bot_name}_reminded"
+            if reminded_key not in (config.timestamps or {}):
+                await self.bot.guild_config_manager.set_value(
+                    message.guild.id, f"timestamps.{reminded_key}", 0
+                )
+                config.timestamps[reminded_key] = 0
+
             bot_delay = config.bot_delay.get(bot_name, delay)
             logger.info(f"[{message.guild.id}] Fetched custom delay for {bot_name}: {bot_delay} seconds.")
 
@@ -451,7 +463,7 @@ class BumpHandler(commands.Cog):
             if custom_message:
                 message = custom_message.replace("{bump_role}", role_mentions_text).replace("{bots}", bots)
             else:
-                message = f"{role_mentions_text} It's time to bump again for: {bots}!"
+                message = f"{role_mentions_text} It's time to bump again for: {bots}!".lstrip()
 
             # Only the configured bump role(s) may ever ping - never @everyone,
             # never users, never other roles a custom_message might smuggle in.
