@@ -152,6 +152,14 @@ const RAIL_ITEMS: RailItem[] = RAIL_GROUPS.flatMap((g) => g.items);
 
 const DEFAULT_SLUG: Slug = "bumps";
 
+/**
+ * The most Manager roles the in-Discord panel's Panel Access Roles picker holds
+ * (its max_values). A longer list would stop that panel screen from opening, so
+ * the picker stops adding here and the server refuses growth past it
+ * (routers/settings.py ACCESS_ROLES_MAX).
+ */
+const ACCESS_ROLES_MAX = 10;
+
 /** Terms that reach the change-history link in the rail search. */
 const HISTORY_SEARCH = [
   "Change history",
@@ -649,6 +657,7 @@ export default function SettingsPage() {
                       description="Members with Manage Server can always manage this bot. Roles ticked here get the same full access, on this dashboard and on the in-Discord admin panel."
                       value={settings.roles?.admin_role_ids ?? []}
                       roles={roles}
+                      max={ACCESS_ROLES_MAX}
                       onChange={(v) => update("roles", { admin_role_ids: v })}
                     />
                   </Fieldset>

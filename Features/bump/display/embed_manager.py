@@ -3,6 +3,7 @@ from typing import List, Tuple, Optional
 import discord
 from discord.ext import commands
 
+from Features.core.guild_scope import cached_guild_channel, resolve_guild_channel
 from storage.log import get_logger
 from storage.sub_systems.bump_config import BOT_DISPLAY_NAMES
 
@@ -124,7 +125,8 @@ class TimerEmbedManager(commands.Cog):
             except (IndexError, ValueError):
                 continue
             try:
-                old_channel = self.bot.get_channel(old_channel_id)
+                # This server's own cache only: the id came from a stored setting.
+                old_channel = cached_guild_channel(self.bot, guild_id, old_channel_id)
                 if old_channel is not None:
                     old_message = await old_channel.fetch_message(int(message_id))
                     await old_message.delete()
@@ -159,18 +161,12 @@ class TimerEmbedManager(commands.Cog):
             channel_id = self._resolve_timer_channel(config, channel_id)
             await self._clear_stale_embeds(guild_id, config, channel_id)
 
-            channel = self.bot.get_channel(channel_id)
-            if not channel:
-                try:
-                    guild = self.bot.get_guild(guild_id)
-                    if guild:
-                        channel = await guild.fetch_channel(channel_id)
-                except Exception as e:
-                    logger.warning(f"[{guild_id}] Could not fetch channel {channel_id}: {e}")
-                    return
+            # Through this server only: a global lookup would find a channel id of
+            # another server and post this server's countdown there.
+            channel = await resolve_guild_channel(self.bot, guild_id, channel_id)
 
             if not channel:
-                logger.warning(f"[{guild_id}] Channel {channel_id} not found for embed update")
+                logger.warning(f"[{guild_id}] Channel {channel_id} not found in this server for embed update")
                 return
 
             embed = self.create_timer_embed(active_timers, expired_timers, role_id)

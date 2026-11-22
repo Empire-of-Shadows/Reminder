@@ -1,6 +1,7 @@
 import asyncio
 import time
 from discord.ext import commands
+from Features.core.guild_scope import cached_guild_channel
 from storage.log import get_logger
 
 logger = get_logger("StartUp")
@@ -28,7 +29,10 @@ class StartUp(commands.Cog):
             if not config.bump_channel or not config.bump_role:
                 return
 
-            channel = self.bot.get_channel(config.bump_channel)
+            # This server's own channel only. The timer is keyed and re-read by
+            # channel.guild, so a channel of another server would also have mixed
+            # the two servers' reminders together.
+            channel = cached_guild_channel(self.bot, guild.id, config.bump_channel)
             if not channel:
                 return
 

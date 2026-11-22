@@ -48,41 +48,126 @@ _KEY_SECTIONS = {
 }
 
 
-async def _validate_guild_ids(guild_id: int, updates: dict) -> None:
-    """Reject channel/role snowflakes that don't belong to this guild.
+#: Shown when the server's channel list cannot be read. The fleet wording (TheCodex 2026-11-20).
+_CHANNEL_LIST_UNREADABLE = (
+    "Could not check that channel against this server's channel list. Try again in a moment."
+)
 
-    Uses the cached guild channel/role fetchers. Fails open when the fetch
-    comes back empty (Discord unreachable) so an API hiccup never blocks a
-    legitimate save - the bot degrades gracefully on foreign ids anyway.
+#: Discord channel type the panel's Bump Channel and Timers Channel pickers offer
+#: (``channel_types=[discord.ChannelType.text]`` in admin/settings/panel_configs.py).
+_TEXT_CHANNEL_TYPE = 0
+
+_CHANNEL_LABELS = {"bump_channel": "bump channel", "timers_channel": "timers channel"}
+
+
+async def _validate_guild_ids(guild_id: int, before: GuildConfig, updates: dict) -> None:
+    """Refuse a channel or role that does not belong to this server.
+
+    Only values this save CHANGES are checked, so an id that was already stored
+    never blocks an unrelated save.
+
+    Channels fail CLOSED (security review 2026-11-21, TheCodex's 2026-11-20 rule):
+    when the server's channel list cannot be read the save is refused with a "try
+    again". Until then an unreadable list let any id through, and the bot resolved
+    the stored channel globally, so an admin of one server could point the bump or
+    timers channel at another server's channel and have reminders posted there.
+    A channel of the wrong kind is refused too (the panel offers text channels only).
+
+    Roles fail OPEN (owner decision 2026-09-14: only the channel list is a security
+    boundary), and are checked against the server's FULL role list
+    (``guild_roles_raw``), not the assignable-only list the role picker shows.
     """
-    from dashboard.routers.dashboard import guild_channels, guild_roles
-
-    channel_keys = [k for k in ("bump_channel", "timers_channel") if updates.get(k)]
-    if channel_keys:
-        channels = await guild_channels(str(guild_id))
-        valid_channels = {str(c["id"]) for c in channels}
-        if valid_channels:
-            for k in channel_keys:
-                if str(updates[k]) not in valid_channels:
-                    raise HTTPException(
-                        status_code=422, detail=f"{k} is not a channel in this guild"
-                    )
-
-    role_cfg = updates.get("roles") or {}
-    wants_roles = bool(updates.get("bump_role")) or bool(role_cfg.get("admin_role_ids"))
-    if wants_roles:
-        roles = await guild_roles(str(guild_id))
-        valid_roles = {str(r["id"]) for r in roles}
-        if valid_roles:
-            if updates.get("bump_role") and str(updates["bump_role"]) not in valid_roles:
-                raise HTTPException(
-                    status_code=422, detail="bump_role is not a role in this guild"
-                )
-            if any(str(r) not in valid_roles for r in role_cfg.get("admin_role_ids", [])):
+    changed_channels = [
+        key for key in ("bump_channel", "timers_channel")
+        if updates.get(key) and updates[key] != int(getattr(before, key) or 0)
+    ]
+    if changed_channels:
+        channels = await discord_cache.guild_channels_raw(str(guild_id))
+        if not channels:
+            raise HTTPException(status_code=422, detail=_CHANNEL_LIST_UNREADABLE)
+        by_id = {str(c["id"]): c for c in channels}
+        for key in changed_channels:
+            channel = by_id.get(str(updates[key]))
+            label = _CHANNEL_LABELS[key]
+            if channel is None:
                 raise HTTPException(
                     status_code=422,
-                    detail="roles.admin_role_ids contains a role not in this guild",
+                    detail=f"That {label} is not in this server. Pick one of this server's channels.",
                 )
+            if channel.get("type") != _TEXT_CHANNEL_TYPE:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"The {label} must be a text channel. Pick a text channel from the list.",
+                )
+
+    new_bump_role = updates.get("bump_role")
+    if new_bump_role == int(before.bump_role or 0):
+        new_bump_role = 0
+    stored_admin = {str(r) for r in _normalized_roles(before.roles)["admin_role_ids"]}
+    added_admin = [
+        str(r) for r in (updates.get("roles") or {}).get("admin_role_ids", [])
+        if str(r) not in stored_admin
+    ]
+    if not new_bump_role and not added_admin:
+        return
+
+    # A readable list always holds @everyone, so an empty one means Discord could
+    # not be read: let the save through.
+    by_id = {str(r["id"]): r for r in await discord_cache.guild_roles_raw(str(guild_id))}
+    if not by_id:
+        return
+
+    if new_bump_role and str(new_bump_role) not in by_id:
+        raise HTTPException(
+            status_code=422,
+            detail="That bump role is not in this server. Pick one of this server's roles.",
+        )
+    for rid in added_admin:
+        if rid == str(guild_id):
+            raise HTTPException(
+                status_code=422,
+                detail="@everyone cannot manage this bot - that would give every member full "
+                       "access. Pick a specific role.",
+            )
+        role = by_id.get(rid)
+        if role is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Manager roles include a role that is not in this server. "
+                       "Pick it again from the list.",
+            )
+        if role.get("managed"):
+            raise HTTPException(
+                status_code=422,
+                detail=f"@{role['name']} is managed by an integration, so anyone that "
+                       f"integration hands it to would get full access. Pick a normal role.",
+            )
+
+
+#: The most roles the admin panel's Panel Access Roles picker holds (its node's
+#: ``max_values``, the engine ``panel_roles_pair`` default of 10). The panel passes every
+#: stored id to the picker as a default value with no trim, so a longer list saved here
+#: would stop that panel screen from opening. test_dashboard_list_caps pins this to the node.
+ACCESS_ROLES_MAX = 10
+
+
+def _refuse_overlong_lists(before: GuildConfig, updates: dict) -> None:
+    """400 when a save makes the Manager roles list longer than the panel can show.
+
+    A list may always shrink, and one already over the cap may be saved unchanged, so an
+    unrelated save never fails and the way back under the cap stays open. (Enabled Bots
+    cannot grow past the panel's cap: only the supported bots survive parsing.)
+    """
+    if "roles" not in updates:
+        return
+    wanted = updates["roles"].get("admin_role_ids") or []
+    stored = _normalized_roles(before.roles)["admin_role_ids"]
+    if len(wanted) > ACCESS_ROLES_MAX and len(wanted) > len(stored):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Manager roles can hold at most {ACCESS_ROLES_MAX} roles, the same as in "
+                   f"the Discord admin panel. Remove some, then save again.",
+        )
 
 
 #: What the bot needs in the Bump Channel and the Timers Channel - the same list the
@@ -96,7 +181,8 @@ async def _validate_like_the_panel(guild_id: int, before: GuildConfig, updates: 
     The panel refuses a bump role that can never ping anybody and a channel the bot
     cannot fully use; the dashboard used to accept both, and the result was a server
     that looked set up and silently reminded nobody. Discord lookups fail open
-    (an unreachable API must not block a save), exactly like the id checks below.
+    (an unreachable API must not block a save), like the role checks in
+    ``_validate_guild_ids``; only its channel membership check fails closed.
     """
     new_role = updates.get("bump_role")
     if new_role and new_role != int(before.bump_role or 0):
@@ -273,8 +359,10 @@ async def update_settings(
             )
 
     if updates:
+        _refuse_overlong_lists(before, updates)
+        # Membership first: nothing else is worth checking for a channel elsewhere.
+        await _validate_guild_ids(guild_id, before, updates)
         await _validate_like_the_panel(guild_id, before, updates)
-        await _validate_guild_ids(guild_id, updates)
         if not await gcm.set_values(guild_id, updates):
             raise HTTPException(status_code=500, detail="Failed to save settings")
         await _audit_changes(guild_id, session, before, updates)

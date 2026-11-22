@@ -26,6 +26,7 @@ from dashboard.routers.member import router as member_router
 from dashboard.routers.overview import router as overview_router
 from dashboard.routers.settings import router as settings_router
 from dashboard.routers.user_data import router as user_data_router
+from status_push import start_status_push, stop_status_push
 from storage.log import get_logger
 
 # Configure the sinks before anything logs. Without this the process keeps
@@ -63,9 +64,15 @@ async def lifespan(app: FastAPI):
     await db.connect()
     await ensure_oauth_state_ttl_index()
     await ensure_session_ttl_index()
+    # The dashboard's own Uptime Kuma push monitor (the bot pushes its own). Off when unset.
+    push_task = start_status_push(
+        os.getenv("KUMA_PUSH_URL_DASHBOARD"), _status_verdict, label="ImperialReminder dashboard",
+    )
     startup_logger.info("Dashboard ready (frontend_built=%s)", os.path.isfile(_index_html))
     yield
     startup_logger.info("Dashboard shutting down")
+    # Before the databases close, so a redeploy never pushes "Database unavailable".
+    await stop_status_push(push_task)
     await db.close()
 
 
@@ -122,39 +129,69 @@ app.include_router(user_data_router, prefix="/api")
 _HEALTH_PING_TIMEOUT = 2.5
 
 
-async def _ping(get_client, name: str) -> bool:
-    """One bounded ping. The failure is logged; none of its detail reaches the response."""
+async def _ping(get_client, name: str) -> float | None:
+    """One bounded ping: its round trip in ms, or None when it failed.
+
+    The failure is logged; none of its detail reaches the response.
+    """
+    started = time.perf_counter()
     try:
         client = get_client()
         await asyncio.wait_for(client.admin.command("ping"), _HEALTH_PING_TIMEOUT)
-        return True
+        return round((time.perf_counter() - started) * 1000, 1)
     except Exception:
         health_logger.warning(f"Mongo health ping failed for the {name} database", exc_info=True)
-        return False
+        return None
 
 
-@app.get("/health")
-async def health():
-    """Liveness plus both databases, per the fleet health contract.
+async def _check() -> tuple[str, bool, bool, float | None]:
+    """``(status, data_ok, sessions_ok, data_ping_ms)``, shared by /health and the Kuma push.
 
     ``database`` is the bot's own data (MONGO_URI): without it no page can read or save
-    a setting, so a failure is ``unhealthy`` with HTTP 503, the rule the bot's own
-    endpoint follows. ``sessions`` is the shared sign-in store: without it nobody can
-    sign in but the public pages still load, so on its own it is ``degraded`` with
-    HTTP 200. The body carries statuses only.
+    a setting, so a failure is ``unhealthy``, the rule the bot's own endpoint follows.
+    ``sessions`` is the shared sign-in store: without it nobody can sign in but the public
+    pages still load, so on its own it is ``degraded``.
     """
     from storage.settings.collections import db_manager
 
-    data_ok, sessions_ok = await asyncio.gather(
+    data_ms, sessions_ms = await asyncio.gather(
         _ping(db_manager.get_client, "bot"),
         _ping(db._get_client, "shared sessions"),
     )
+    data_ok, sessions_ok = data_ms is not None, sessions_ms is not None
     if not data_ok:
         status = "unhealthy"
     elif not sessions_ok:
         status = "degraded"
     else:
         status = "healthy"
+    return status, data_ok, sessions_ok, data_ms
+
+
+async def _status_verdict() -> tuple[str, str, float | None]:
+    """``(status, message, ping_ms)`` for the dashboard's Uptime Kuma push monitor.
+
+    The message is shown on the PUBLIC status page: plain words naming each failing check,
+    "Online" when none fail. The ping is the round trip to the bot's own database.
+    """
+    status, data_ok, sessions_ok, data_ms = await _check()
+    problems = []
+    if not data_ok:
+        problems.append("Database unavailable")
+    if not sessions_ok:
+        problems.append("Sign-in unavailable")
+    return status, ", ".join(problems) or "Online", data_ms
+
+
+@app.get("/health")
+async def health():
+    """Liveness plus both databases, per the fleet health contract (see ``_check``).
+
+    ``unhealthy`` answers HTTP 503; ``degraded`` stays 200 (the monitor discards the body of
+    any non-200, so a degraded answer must stay 200). The body carries statuses only - never
+    a hostname, connection string or exception text.
+    """
+    status, data_ok, sessions_ok, _ = await _check()
     response = {
         "status": status,
         "timestamp": time.time(),

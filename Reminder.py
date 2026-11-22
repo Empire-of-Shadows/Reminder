@@ -6,14 +6,16 @@ Unified startup sequence (mirrors Ecom / TheHost / TheCodex):
     2. setup_application_logging  → "Application logging initialized for: discord-bot-reminder"
     3. main(): banner + Python/discord.py versions
     4. _async_main(): install signal handlers → init DatabaseManager → start health endpoint (50014)
+       → start the Uptime Kuma status push (only when KUMA_PUSH_URL_BOT is set)
     5. start_services(): bot.start raced against shutdown_event
     6. on_ready (idempotent via _init_done):
        Database Attachment → Cog Loading → Command Sync → Status Setup → Timer Reschedule → Background Tasks
-    7. shutdown_handler(): health → background tasks (cancel + await) → bot → DB
+    7. shutdown_handler(): status push → health → background tasks (cancel + await) → bot → DB
 """
 
 import asyncio
 import logging
+import os
 import signal
 import sys
 import time
@@ -38,12 +40,20 @@ from startup.phases import (  # noqa: E402
     log_startup_summary,
     startup_phase,
 )
-from health_endpoint import initialize_health_server, stop_health_server  # noqa: E402
+from health_endpoint import (  # noqa: E402
+    initialize_health_server,
+    status_verdict,
+    stop_health_server,
+)
+from status_push import start_status_push, stop_status_push  # noqa: E402
 from storage.settings.collections import db_manager  # noqa: E402
 
 # Initialize application-wide logging
 APPLICATION_NAME = "discord-bot-reminder"
 HEALTH_PORT = 50014
+
+# The bot's Uptime Kuma push monitor. The dashboard pushes its own (KUMA_PUSH_URL_DASHBOARD).
+_status_push_task = None
 
 app_logger = setup_application_logging(
     app_name=APPLICATION_NAME,
@@ -148,8 +158,10 @@ bot.event(on_ready)
 
 
 async def shutdown_handler():
-    """Graceful shutdown: health server → background tasks (cancel + await) → bot → database.
+    """Graceful shutdown: status push → health server → background tasks (cancel + await) → bot → database.
 
+    The status push stops first: a push sent after the database closes would report
+    "Database unavailable" on the public status page for every redeploy.
     The bot closes BEFORE the database: ``bot.close()`` runs cog_unload hooks
     that may still touch the DB, and cancelled timer/batch tasks are awaited so
     nothing is mid-write when connections drop. Bump timers are safe to drop -
@@ -157,6 +169,11 @@ async def shutdown_handler():
     """
     shutdown_start = time.perf_counter()
     logger.info("🛑 Initiating graceful shutdown...")
+
+    try:
+        await stop_status_push(_status_push_task)
+    except Exception as e:
+        logger.error(f"❌ Error stopping status push: {e}")
 
     try:
         stop_health_server()
@@ -297,6 +314,15 @@ async def _async_main(shutdown_event: asyncio.Event):
         logger.info("✅ Health check endpoint initialized")
     except Exception as e:
         logger.error(f"❌ Failed to start health endpoint: {e}")
+
+    # Same verdict as /health, pushed every 30 s. Off (one log line) when the URL is unset.
+    global _status_push_task
+    try:
+        _status_push_task = start_status_push(
+            os.getenv("KUMA_PUSH_URL_BOT"), status_verdict, label="ImperialReminder bot",
+        )
+    except Exception as e:
+        logger.error(f"❌ Failed to start status push: {e}")
 
     await start_services(shutdown_event)
 

@@ -3,6 +3,34 @@
 All notable, community-facing changes to ImperialReminder are recorded here in plain language.
 For the technical, commit-level history, see git.
 
+## [Unreleased] - 2026-11-21 (status page, reminders stay in your server, safer dashboard settings)
+
+### Added
+- **Imperial Reminder and its dashboard can report their status to the public status page.** Each
+  one checks itself every 30 seconds and reports whether it is online, how fast it is responding,
+  and in plain words what is wrong when something is: not connected to Discord, database
+  unavailable, or sign-in unavailable on the dashboard. If either one stops reporting, the page
+  marks it down. The bot and the dashboard report separately, so a problem with one never makes
+  the other look down.
+
+### Fixed
+- **@everyone can never open the admin panel.** If @everyone had somehow been saved as a
+  manager role, every member of the server could open the full admin panel. It now grants
+  nothing; members with Manage Server and real manager roles are not affected.
+- **Reminders and the countdown only ever go to your own server.** If your settings somehow held a
+  channel from a different server, the bot could post your reminder or countdown there. It now
+  only uses channels and roles that belong to your server, and skips anything that does not.
+- **Settings can only point at your own server's channels.** The dashboard now always checks a
+  newly picked bump or timers channel against your server's own channel list. If it cannot read
+  that list from Discord right now, it asks you to try again in a moment instead of saving a
+  channel it could not check. A channel that is not a text channel is refused too.
+- **A role from another server is refused.** The dashboard now checks a newly picked bump role or
+  manager role against every role in your server, and says plainly when it is not one of yours.
+- **Manager roles on the dashboard stop at 10, the same as in Discord.** A longer list stopped the
+  Panel Access Roles screen in the Discord admin panel from opening. The dashboard now stops at 10.
+  A list you saved earlier that is already longer still saves, and you can always remove roles from
+  it.
+
 ## [Unreleased] - 2026-11-21 (support server link, sign-in security)
 
 ### Fixed

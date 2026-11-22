@@ -9,6 +9,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from Features.bump.display.embed_manager import TimerEmbedManager
+from Features.core.guild_scope import guild_role_ids, resolve_guild_channel
 from storage.sub_systems.bump_config import (
     DISBOARD_ID, DISBOARD_KEYWORD, TWO, Bump4You, BUMP4YOU_ID, BUMPIT_ID,
     BUMPIT_SUCCESS_KEYWORD, ONE, BUMP_BOTS, WEBUMP_ID, WEBUMP_SUCCESS,
@@ -404,17 +405,12 @@ class BumpHandler(commands.Cog):
             channel_id = int(config.bump_channel)
             role_id = int(config.bump_role or 0)
 
-            channel = self.bot.get_channel(channel_id)
-            if channel is None:
-                try:
-                    guild = self.bot.get_guild(guild_id)
-                    if guild:
-                        channel = await guild.fetch_channel(channel_id)
-                except Exception:
-                    channel = None
+            # Through this server only: a global lookup would find a channel id of
+            # another server and post this server's reminder there.
+            channel = await resolve_guild_channel(self.bot, guild_id, channel_id)
 
             if channel is None:
-                logger.warning(f"[{guild_id}] Channel {channel_id} not found for reminder {bot_name}")
+                logger.warning(f"[{guild_id}] Channel {channel_id} not found in this server for reminder {bot_name}")
                 return
 
             await self.queue_reminder(channel, role_id, bot_name)
@@ -442,7 +438,11 @@ class BumpHandler(commands.Cog):
             bots = ", ".join(
                 f"**{BOT_DISPLAY_NAMES.get(bot_name, bot_name)}**" for _, bot_name in reminders
             )
-            role_mentions = set(role_id for role_id, _ in reminders if role_id)
+            # Only roles of this channel's own server: an id from another server
+            # would never ping anyone here, so it is left out of the message too.
+            role_mentions = guild_role_ids(
+                channel.guild, [role_id for role_id, _ in reminders if role_id]
+            )
             role_mentions_text = " ".join(f"<@&{r}>" for r in role_mentions)
 
             # A written custom message is always used - every feature of this
