@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Imperial Reminder** is a Discord bot that tracks and reminds users when it's time to bump their server on Discord server-listing services (Disboard, BumpIt, Bump4You, WeBump, OneBump, Unfocused). It monitors bump success messages, schedules reminders based on cooldown periods, and manages guild-specific configuration in MongoDB. A FastAPI web dashboard lets server admins configure the bot via Discord OAuth.
+**Imperial Reminder** is a Discord bot that tracks and reminds users when it's time to bump their server on Discord server-listing services (Disboard, BumpIt, Bump4You, WeBump, OneBump, GuildFinder). It monitors bump success messages, schedules reminders based on cooldown periods, and manages guild-specific configuration in MongoDB. A FastAPI web dashboard lets server admins configure the bot via Discord OAuth.
 
 ImperialReminder is fully aligned with the **shared Empire of Shadows engine architecture** (same standard as TheDecree, TheCodex, and Stygian-Relay): all four shared engines are vendored and drift-gated, with thin bot-owned seams. See the monorepo-root `../../CLAUDE.md` for the ecosystem-wide rules; this file wins on local details.
 
@@ -123,7 +123,7 @@ Configured in `storage/sub_systems/bump_config.py`:
 | Bump4You | 1089935069927456849 | 2 hours | - |
 | WeBump | 1154077045903593555 | 2 hours | - |
 | OneBump | 1028956609382199346 | 2 hours | 30 minutes |
-| Unfocused | 835255643157168168 | 2 hours | 90 minutes |
+| GuildFinder (key `unfocused`, its pre-rebrand name; stored config uses the key, so it stays) | 835255643157168168 | 2 hours | 90 minutes |
 
 ## Common Development Tasks
 

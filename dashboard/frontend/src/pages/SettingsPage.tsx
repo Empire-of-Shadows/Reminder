@@ -94,7 +94,7 @@ const RAIL_GROUPS: { name: string; items: RailItem[] }[] = [
         blurb:
           "The listing services this server bumps on. The bot only times the ones you tick here, so leave out anything you do not use.",
         saveLabel: "Save bump bots",
-        search: ["Disboard", "BumpIt", "Bump4You", "WeBump", "OneBump", "Unfocused", "Services"],
+        search: ["Disboard", "BumpIt", "Bump4You", "WeBump", "OneBump", "GuildFinder", "Unfocused", "Services"],
       },
       {
         slug: "cooldowns",

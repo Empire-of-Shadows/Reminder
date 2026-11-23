@@ -87,7 +87,7 @@ REMINDERS = HelpCategory(
     blurb="The part that runs without anyone asking it to.",
     body=(
         "**Listing bots it can track**\n"
-        "Disboard, BumpIt, Bump4You, WeBump, OneBump, and Unfocused. Default waits are "
+        "Disboard, BumpIt, Bump4You, WeBump, OneBump, and GuildFinder. Default waits are "
         "2 hours, except BumpIt at 1 hour. An admin chooses which of them this server "
         "actually uses, and can change the wait for each one.\n"
         "\n"

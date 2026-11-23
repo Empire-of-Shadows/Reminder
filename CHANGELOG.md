@@ -3,7 +3,13 @@
 All notable, community-facing changes to ImperialReminder are recorded here in plain language.
 For the technical, commit-level history, see git.
 
-## [Unreleased] - 2026-11-22 (no lost first reminder)
+## [Unreleased] - 2026-11-22 (no lost first reminder, GuildFinder name)
+
+### Changed
+- **Unfocused is now called GuildFinder everywhere.** The listing site renamed itself, so the
+  admin panel, the countdown, the reminders, the help pages and the dashboard now say
+  GuildFinder. Your settings and running timers carry over untouched, and searching the
+  dashboard settings for "Unfocused" still finds it.
 
 ### Fixed
 - **A server's first reminder for a bump bot is no longer lost if the bot restarts.** If the

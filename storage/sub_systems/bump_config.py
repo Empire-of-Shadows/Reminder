@@ -91,7 +91,9 @@ BOT_DISPLAY_NAMES = {
     "bump4you": "Bump4You",
     "webump": "WeBump",
     "onebump": "OneBump",
-    "unfocused": "Unfocused",
+    # Unfocused renamed itself GuildFinder (same bot, same ID). The key stays "unfocused"
+    # because stored guild config uses it (bot_delay.unfocused, timestamps.unfocused_timestamp).
+    "unfocused": "GuildFinder",
 }
 
 

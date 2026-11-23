@@ -42,7 +42,7 @@ pings your bump role the moment that site is ready again.
 | Bump4You | 2 hours | - |
 | WeBump | 2 hours | - |
 | OneBump | 2 hours | 30 minutes |
-| Unfocused | 2 hours | 90 minutes |
+| GuildFinder (formerly Unfocused) | 2 hours | 90 minutes |
 
 Turn each site on or off, and pick its cooldown, per server.
 
