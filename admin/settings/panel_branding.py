@@ -25,7 +25,7 @@ SETUP_GUIDE_TEXT = (
     "Open **Core Setup** below to set both. Once they are set, "
     "the **Bump Bots** and **Messages** sections unlock.\n"
     "\n"
-    "**Supported bots:** Disboard, BumpIt, Bump4You, WeBump, OneBump, GuildFinder.\n"
+    "**Supported bots:** Disboard, BumpIt, Bump4You, WeBump, OneBump, GuildFinder, The Bannerhall.\n"
     "Use **Bump Bots → Enabled Bots** to pick which ones to track, and "
     "**Cooldowns** to tune each bot's reminder delay."
 )

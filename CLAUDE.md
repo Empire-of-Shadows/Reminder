@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Imperial Reminder** is a Discord bot that tracks and reminds users when it's time to bump their server on Discord server-listing services (Disboard, BumpIt, Bump4You, WeBump, OneBump, GuildFinder). It monitors bump success messages, schedules reminders based on cooldown periods, and manages guild-specific configuration in MongoDB. A FastAPI web dashboard lets server admins configure the bot via Discord OAuth.
+**Imperial Reminder** is a Discord bot that tracks and reminds users when it's time to bump their server on Discord server-listing services (Disboard, BumpIt, Bump4You, WeBump, OneBump, GuildFinder, The Bannerhall). It monitors bump success messages, schedules reminders based on cooldown periods, and manages guild-specific configuration in MongoDB. A FastAPI web dashboard lets server admins configure the bot via Discord OAuth.
 
 ImperialReminder is fully aligned with the **shared Empire of Shadows engine architecture** (same standard as TheDecree, TheCodex, and Stygian-Relay): all four shared engines are vendored and drift-gated, with thin bot-owned seams. See the monorepo-root `../../CLAUDE.md` for the ecosystem-wide rules; this file wins on local details.
 
@@ -124,6 +124,9 @@ Configured in `storage/sub_systems/bump_config.py`:
 | WeBump | 1154077045903593555 | 2 hours | - |
 | OneBump | 1028956609382199346 | 2 hours | 30 minutes |
 | GuildFinder (key `unfocused`, its pre-rebrand name; stored config uses the key, so it stays) | 835255643157168168 | 2 hours | 90 minutes |
+| The Bannerhall (key `bannerhall`; the Empire's own listing site, `Website/ListingSite`, added 2026-11-25) | 1574454988804202587 (application id: its `/bump` success is an interaction reply, matched on `webhook_id`) | 2 hours | - |
+
+The Bannerhall's success message ("**Bumped on the Bannerhall**", keyword `bumped on the bannerhall`) has no content or embed: it is Components v2 (Container > Section > TextDisplay). `get_component_text` walks nested components and reads `TextDisplay.content` (before 2026-11-25 it read only action-row labels and select options, so such a message read as empty). Its other answers (too soon, not listed) are private, so they never reach this bot.
 
 ## Common Development Tasks
 

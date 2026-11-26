@@ -43,6 +43,7 @@ pings your bump role the moment that site is ready again.
 | WeBump | 2 hours | - |
 | OneBump | 2 hours | 30 minutes |
 | GuildFinder (formerly Unfocused) | 2 hours | 90 minutes |
+| The Bannerhall (thebannerhall.com, `/bump`) | 2 hours | - |
 
 Turn each site on or off, and pick its cooldown, per server.
 

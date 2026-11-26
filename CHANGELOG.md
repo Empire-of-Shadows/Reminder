@@ -3,6 +3,22 @@
 All notable, community-facing changes to ImperialReminder are recorded here in plain language.
 For the technical, commit-level history, see git.
 
+## [Unreleased] - 2026-11-25 (The Bannerhall)
+
+### Added
+- **Reminders for The Bannerhall.** Imperial Reminder now recognises a bump made with The
+  Bannerhall's `/bump` (thebannerhall.com) and reminds your bump role when the 2 hours are up.
+  Tick **The Bannerhall** in **Bump Bots -> Enabled Bots** to turn it on.
+
+### Fixed
+- **Bump messages in Discord's newer message layout are now read.** A listing bot that posts its
+  success message as a layout card rather than plain text or an embed used to go unnoticed.
+- **A role or channel picker in the admin panel opens even when more are saved than it can show.**
+  It used to fail to open; it now stretches to fit what is saved.
+- **The dashboard's sign-in limits count each visitor properly.** Behind our network tunnel the
+  dashboard could be fooled about who was signing in, so the limits on repeated tries were easy to
+  dodge.
+
 ## [Unreleased] - 2026-11-22 (no lost first reminder, GuildFinder name)
 
 ### Changed

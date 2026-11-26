@@ -27,6 +27,7 @@ DEFAULT_GUILD_CONFIG = OrderedDict([
         ("webump", TWO),
         ("onebump", TWO),
         ("unfocused", TWO),
+        ("bannerhall", TWO),
     ])),
     ("timestamps", OrderedDict([
         ("bumpit_timestamp", 0),
@@ -35,6 +36,7 @@ DEFAULT_GUILD_CONFIG = OrderedDict([
         ("webump_timestamp", 0),
         ("onebump_timestamp", 0),
         ("unfocused_timestamp", 0),
+        ("bannerhall_timestamp", 0),
     ]))
 ])
 
@@ -45,6 +47,10 @@ BUMP4YOU_ID = 1089935069927456849
 WEBUMP_ID = 1154077045903593555
 ONEBUMP_ID = 1028956609382199346
 UNFOCUSED_ID = 835255643157168168
+# The Bannerhall (thebannerhall.com, the Empire's own listing site, 2026-11-25): its application
+# id. Its /bump success is an interaction reply, whose webhook_id is this id, in the newer
+# component layout (a Container with a TextDisplay, read by get_component_text).
+BANNERHALL_ID = 1574454988804202587
 
 # Bot ID to (name, default_delay) mapping
 BUMP_BOTS_INFO = {
@@ -54,6 +60,7 @@ BUMP_BOTS_INFO = {
     WEBUMP_ID: ("webump", TWO),
     ONEBUMP_ID: ("onebump", TWO),
     UNFOCUSED_ID: ("unfocused", TWO),
+    BANNERHALL_ID: ("bannerhall", TWO),
 }
 
 # Bump success keywords
@@ -69,7 +76,10 @@ SUCCESS_KEYWORDS = (
     "bump carried out",
     "server successfully bumped",
     "successful bump",
-    "boop success"
+    "boop success",
+    # The Bannerhall's public answer to a /bump that worked ("**Bumped on the Bannerhall**").
+    # Its too-soon and other answers are private, so they never reach this bot.
+    "bumped on the bannerhall",
 )
 
 # Default cooldown timers (bot_name -> seconds)
@@ -80,6 +90,7 @@ BUMP_BOTS = {
     "webump": TWO,
     "onebump": TWO,
     "unfocused": TWO,
+    "bannerhall": TWO,
 }
 
 SUPPORTED_BOTS = list(BUMP_BOTS.keys())
@@ -94,6 +105,7 @@ BOT_DISPLAY_NAMES = {
     # Unfocused renamed itself GuildFinder (same bot, same ID). The key stays "unfocused"
     # because stored guild config uses it (bot_delay.unfocused, timestamps.unfocused_timestamp).
     "unfocused": "GuildFinder",
+    "bannerhall": "The Bannerhall",
 }
 
 
@@ -105,4 +117,5 @@ BUMP_BOTS_CHOICES = {
     "webump": {"2 Hours": TWO},
     "onebump": {"2 Hours": TWO, "30 Minutes": THREE_0},
     "unfocused": {"2 Hours": TWO, "90 Minutes": H1_30},
+    "bannerhall": {"2 Hours": TWO},
 }

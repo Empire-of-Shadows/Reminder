@@ -534,16 +534,35 @@ class BumpHandler(commands.Cog):
             if embed.author and embed.author.name: parts.append(str(embed.author.name))
         return "\n".join(p for p in parts if p)
 
+    # How deep get_component_text follows nested components. Discord's own nesting is shallow
+    # (Container > Section > TextDisplay); this only stops a malformed payload looping.
+    _COMPONENT_DEPTH = 6
+
     def get_component_text(self, message: discord.Message) -> str:
+        """Button and select labels, and (since 2026-11-25) the text of the newer component
+        layout: a TextDisplay's content, inside a Container or a Section at any depth, and a
+        Section's accessory. The Bannerhall's /bump answer is only such text, with no content
+        or embed, so without this it read as empty."""
         parts = []
-        for row in getattr(message, "components", []):
-            for child in getattr(row, "children", []):
-                if hasattr(child, "label") and child.label:
-                    parts.append(str(child.label))
-                if hasattr(child, "options"):
-                    for opt in child.options:
-                        if opt.label: parts.append(str(opt.label))
-                        if opt.description: parts.append(str(opt.description))
+
+        def walk(component, depth: int) -> None:
+            if component is None or depth > self._COMPONENT_DEPTH:
+                return
+            content = getattr(component, "content", None)
+            if isinstance(content, str) and content:
+                parts.append(content)
+            label = getattr(component, "label", None)
+            if isinstance(label, str) and label:
+                parts.append(label)
+            for opt in getattr(component, "options", None) or []:
+                if getattr(opt, "label", None): parts.append(str(opt.label))
+                if getattr(opt, "description", None): parts.append(str(opt.description))
+            for child in getattr(component, "children", None) or []:
+                walk(child, depth + 1)
+            walk(getattr(component, "accessory", None), depth + 1)
+
+        for component in getattr(message, "components", None) or []:
+            walk(component, 0)
         return "\n".join(p for p in parts if p)
 
     def _extract_misc_from_message(self, message: discord.Message) -> str:

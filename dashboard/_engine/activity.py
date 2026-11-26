@@ -42,6 +42,7 @@ person instead of an IP::
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 import os
 import time
@@ -122,12 +123,28 @@ def record_actor(request: Request, session: dict) -> None:
     )
 
 
+def _is_ip(value: str) -> bool:
+    try:
+        ipaddress.ip_address(value)
+        return True
+    except ValueError:
+        return False
+
+
 def _client_ip(request: Request) -> str:
+    # The same rule as rate_limit._client_ip (see there): from a trusted proxy,
+    # CF-Connecting-IP, else the right-most X-Forwarded-For entry; a value that
+    # is not an IP address, or any other peer, logs the socket address.
     peer = request.client.host if request.client else "unknown"
     if peer in _TRUSTED_PROXIES:
+        cf = request.headers.get("cf-connecting-ip", "").strip()
+        if _is_ip(cf):
+            return cf
         forwarded = request.headers.get("x-forwarded-for")
         if forwarded:
-            return forwarded.split(",")[0].strip()
+            last = forwarded.split(",")[-1].strip()
+            if _is_ip(last):
+                return last
     return peer
 
 

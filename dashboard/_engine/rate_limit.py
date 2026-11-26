@@ -18,6 +18,7 @@ The route table is seam-configured: ``config.RATE_LIMITS`` is an ordered list of
 so more specific prefixes must come before their parents).
 """
 
+import ipaddress
 import time
 
 from fastapi import HTTPException, Request
@@ -38,16 +39,37 @@ _last_sweep = 0.0
 _SWEEP_INTERVAL = 300.0
 
 
+def _is_ip(value: str) -> bool:
+    try:
+        ipaddress.ip_address(value)
+        return True
+    except ValueError:
+        return False
+
+
 def _client_ip(request: Request) -> str:
-    # X-Forwarded-For is attacker-controlled unless the immediate peer is a
-    # trusted reverse proxy; trusting it blindly hands every client a fresh
-    # rate-limit bucket per request. Only honor it from TRUSTED_PROXY_IPS,
+    # Forwarding headers are attacker-controlled unless the immediate peer is a
+    # trusted reverse proxy; trusting them blindly hands every client a fresh
+    # rate-limit bucket per request. Only honor them from TRUSTED_PROXY_IPS,
     # otherwise use the socket address.
+    #
+    # From a trusted proxy: Cloudflare's CF-Connecting-IP first (the fleet's
+    # tunnel sets it and replaces any copy a visitor sends), then the RIGHT-most
+    # X-Forwarded-For entry, the one the proxy itself appended. Entries to its
+    # left are whatever the visitor sent, so the left-most (used until
+    # 2026-11-23) let anyone pick their own bucket. A value that is not an IP
+    # address counts the proxy. The production gateway the tunnel connects from
+    # is 172.18.0.1 (vault: Production Host Map).
     peer = request.client.host if request.client else "unknown"
     if peer in _TRUSTED_PROXIES:
+        cf = request.headers.get("cf-connecting-ip", "").strip()
+        if _is_ip(cf):
+            return cf
         xff = request.headers.get("x-forwarded-for")
         if xff:
-            return xff.split(",")[0].strip()
+            last = xff.split(",")[-1].strip()
+            if _is_ip(last):
+                return last
     return peer
 
 

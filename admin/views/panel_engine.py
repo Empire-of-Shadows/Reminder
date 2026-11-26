@@ -678,6 +678,25 @@ def _select_cid(node_key: str, nonce: Optional[str]) -> str:
     return f"{base}:{nonce or _select_nonce()}"
 
 
+# Discord's hard ceiling on a select's max_values and on its default values.
+_DISCORD_SELECT_MAX = 25
+
+
+def _fit_select_to_stored(max_values: int, current_values: list) -> tuple[int, list]:
+    """Return ``(max_values, default_values)`` that Discord will accept for a stored list.
+
+    Discord refuses a select whose pre-filled defaults outnumber its max_values, so a
+    stored list longer than the node's cap (saved before a cap existed, or written by
+    another path) used to stop the editor screen from opening at all. Stretch the max
+    to fit what is stored, never past Discord's 25, so the screen opens showing the
+    real list and the admin can save it as it is or shorten it. A list that has not
+    outgrown the node's cap leaves the node's own max untouched.
+    """
+    values = list(current_values or [])
+    fitted_max = min(_DISCORD_SELECT_MAX, max(max_values, len(values)))
+    return fitted_max, values[:fitted_max]
+
+
 def build_select_view(
     node: PanelNode,
     current_values: list,
@@ -756,12 +775,13 @@ def build_select_view(
 
     # Build the select component
     if node.kind == "role_select":
+        role_max, role_defaults = _fit_select_to_stored(node.max_values, current_values)
         component = discord.ui.RoleSelect(
             placeholder=f"Select roles for {node.label}...",
             custom_id=_select_cid(node.key, select_nonce),
             min_values=node.min_values,
-            max_values=node.max_values,
-            default_values=[discord.Object(id=int(rid)) for rid in current_values],
+            max_values=role_max,
+            default_values=[discord.Object(id=int(rid)) for rid in role_defaults],
         )
 
         async def _role_cb(interaction: discord.Interaction):
@@ -774,12 +794,13 @@ def build_select_view(
         effective_max = node.max_values
         if is_premium and node.premium_max_values is not None:
             effective_max = node.premium_max_values
+        effective_max, channel_defaults = _fit_select_to_stored(effective_max, current_values)
         select_kwargs = dict(
             placeholder=f"Select channel for {node.label}...",
             custom_id=_select_cid(node.key, select_nonce),
             min_values=node.min_values,
             max_values=effective_max,
-            default_values=[discord.Object(id=int(v)) for v in current_values],
+            default_values=[discord.Object(id=int(v)) for v in channel_defaults],
         )
         if node.channel_types:
             select_kwargs["channel_types"] = node.channel_types

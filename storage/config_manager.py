@@ -36,6 +36,7 @@ def _default_bot_delay() -> Dict[str, Any]:
         "webump": TWO,
         "onebump": TWO,
         "unfocused": TWO,
+        "bannerhall": TWO,
     }
 
 def _default_timestamps() -> Dict[str, Any]:
@@ -46,6 +47,7 @@ def _default_timestamps() -> Dict[str, Any]:
         "webump_timestamp": 0,
         "onebump_timestamp": 0,
         "unfocused_timestamp": 0,
+        "bannerhall_timestamp": 0,
     }
 
 DEFAULT_GUILD_CONFIG_DICT = {
